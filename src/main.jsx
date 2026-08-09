@@ -126,6 +126,7 @@ function PocketCircleApp() {
       {
         group_id: selectedGroup.id,
         paid_by: session.user.id,
+        created_by: session.user.id, // <--- ADD THIS LINE
         description: title.trim(),
         amount: parseFloat(amount),
         category: category
