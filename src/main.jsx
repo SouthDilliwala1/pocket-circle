@@ -51,11 +51,9 @@ function PocketCircleApp() {
     const inviteGroupId = params.get('invite');
 
     if (inviteGroupId && session) {
-      // Add user to the invited group
       await supabase.from('group_members').insert([
         { group_id: inviteGroupId, user_id: session.user.id, role: 'member' }
       ]);
-      // Clear URL parameter clean without refresh
       window.history.replaceState({}, document.title, window.location.pathname);
     }
 
@@ -110,7 +108,6 @@ function PocketCircleApp() {
     }
 
     if (data) {
-      // Add owner to group_members
       await supabase.from('group_members').insert([
         { group_id: data.id, user_id: session.user.id, role: 'owner' }
       ]);
@@ -121,29 +118,19 @@ function PocketCircleApp() {
     }
   };
 
-    const addExpense = async (e) => {
-      e.preventDefault();
-      if (!title.trim() || !amount || !selectedGroup) return;
+  const addExpense = async (e) => {
+    e.preventDefault();
+    if (!title.trim() || !amount || !selectedGroup) return;
 
-      // Pass description instead of title to match Supabase table schema
-      const { error } = await supabase.from('expenses').insert([
-        {
-          group_id: selectedGroup.id,
-          paid_by: session.user.id,
-          description: title.trim(),
-          amount: parseFloat(amount),
-          category: category
-        }
-      ]);
-
-      if (error) {
-        alert(`Error adding expense: ${error.message}`);
-      } else {
-        setTitle('');
-        setAmount('');
-        fetchExpenses(selectedGroup.id);
+    const { error } = await supabase.from('expenses').insert([
+      {
+        group_id: selectedGroup.id,
+        paid_by: session.user.id,
+        description: title.trim(),
+        amount: parseFloat(amount),
+        category: category
       }
-    };
+    ]);
 
     if (error) {
       alert(`Error adding expense: ${error.message}`);
