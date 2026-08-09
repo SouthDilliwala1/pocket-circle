@@ -49,25 +49,35 @@ export default function PocketCircleApp() {
     }
   }, [selectedGroup]);
 
+  // Join group via invite link and fetch private groups
   const handleInviteAndFetchGroups = async () => {
     const params = new URLSearchParams(window.location.search);
     const inviteGroupId = params.get('invite');
 
     if (inviteGroupId && session) {
-      await supabase.from('group_members').insert([
+      // Add user to the group
+      const { error } = await supabase.from('group_members').insert([
         { group_id: inviteGroupId, user_id: session.user.id, role: 'member' }
       ]);
+
+      if (!error) {
+        alert("You've successfully joined the group!");
+      }
+      // Clear URL parameter cleanly
       window.history.replaceState({}, document.title, window.location.pathname);
     }
 
-    fetchGroups();
+    fetchGroups(inviteGroupId);
   };
 
-  const fetchGroups = async () => {
+  const fetchGroups = async (autoSelectGroupId = null) => {
     const { data, error } = await supabase.from('groups').select('*');
     if (!error && data) {
       setGroups(data);
-      if (data.length > 0 && !selectedGroup) {
+      if (autoSelectGroupId) {
+        const joinedGroup = data.find(g => g.id === autoSelectGroupId);
+        if (joinedGroup) setSelectedGroup(joinedGroup);
+      } else if (data.length > 0 && !selectedGroup) {
         setSelectedGroup(data[0]);
       }
     }
@@ -86,7 +96,7 @@ export default function PocketCircleApp() {
   const handleGoogleLogin = async () => {
     await supabase.auth.signInWithOAuth({
       provider: 'google',
-      options: { redirectTo: window.location.origin }
+      options: { redirectTo: window.location.href }
     });
   };
 
@@ -99,6 +109,7 @@ export default function PocketCircleApp() {
     e.preventDefault();
     if (!newGroupName.trim()) return;
 
+    // 1. Insert into groups
     const { data, error } = await supabase
       .from('groups')
       .insert([{ name: newGroupName, group_type: 'Household', owner_id: session.user.id }])
@@ -111,14 +122,14 @@ export default function PocketCircleApp() {
     }
 
     if (data) {
+      // 2. Add owner into group_members
       await supabase.from('group_members').insert([
         { group_id: data.id, user_id: session.user.id, role: 'owner' }
       ]);
 
       setNewGroupName('');
       setShowCreateGroupModal(false);
-      fetchGroups();
-      setSelectedGroup(data);
+      fetchGroups(data.id);
     }
   };
 
@@ -198,27 +209,31 @@ export default function PocketCircleApp() {
           </div>
 
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 10 }}>
-            {groups.map(group => {
-              const isSelected = selectedGroup?.id === group.id;
-              const isTrip = group.group_type?.toLowerCase().includes('trip');
-              return (
-                <div
-                  key={group.id}
-                  onClick={() => setSelectedGroup(group)}
-                  style={{
-                    ...styles.groupCardItem,
-                    backgroundColor: isSelected ? '#eef5f1' : '#fff',
-                    borderColor: isSelected ? '#22533e' : '#eee'
-                  }}
-                >
-                  <span style={styles.groupIcon}>{isTrip ? '🌴' : '🏠'}</span>
-                  <div>
-                    <div style={{ fontWeight: 600, fontSize: 14 }}>{group.name}</div>
-                    <div style={{ fontSize: 12, color: '#777' }}>{group.group_type || 'Household'}</div>
+            {groups.length === 0 ? (
+              <p style={{ fontSize: 12, color: '#888' }}>No groups joined yet.</p>
+            ) : (
+              groups.map(group => {
+                const isSelected = selectedGroup?.id === group.id;
+                const isTrip = group.group_type?.toLowerCase().includes('trip');
+                return (
+                  <div
+                    key={group.id}
+                    onClick={() => setSelectedGroup(group)}
+                    style={{
+                      ...styles.groupCardItem,
+                      backgroundColor: isSelected ? '#eef5f1' : '#fff',
+                      borderColor: isSelected ? '#22533e' : '#eee'
+                    }}
+                  >
+                    <span style={styles.groupIcon}>{isTrip ? '🌴' : '🏠'}</span>
+                    <div>
+                      <div style={{ fontWeight: 600, fontSize: 14 }}>{group.name}</div>
+                      <div style={{ fontSize: 12, color: '#777' }}>{group.group_type || 'Household'}</div>
+                    </div>
                   </div>
-                </div>
-              );
-            })}
+                );
+              })
+            )}
           </div>
 
           {selectedGroup && (
