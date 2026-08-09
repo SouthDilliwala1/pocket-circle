@@ -56,12 +56,20 @@ function PocketCircleApp() {
     e.preventDefault();
     if (!newGroupName.trim()) return;
 
-    const { data, error } = await supabase
+    // Insert only the name into groups
+    const { data: groupData, error: groupError } = await supabase
       .from('groups')
-      .insert([{ name: newGroupName, created_by: session.user.id }])
-      .select();
+      .insert([{ name: newGroupName }])
+      .select()
+      .single();
 
-    if (!error && data) {
+    if (groupError) {
+      console.error('Group creation failed:', groupError.message);
+      alert(`Error creating group: ${groupError.message}`);
+      return;
+    }
+
+    if (groupData) {
       setNewGroupName('');
       fetchGroups();
     }
