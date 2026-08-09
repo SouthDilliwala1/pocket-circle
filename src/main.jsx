@@ -121,19 +121,29 @@ function PocketCircleApp() {
     }
   };
 
-  const addExpense = async (e) => {
-    e.preventDefault();
-    if (!title.trim() || !amount || !selectedGroup) return;
+    const addExpense = async (e) => {
+      e.preventDefault();
+      if (!title.trim() || !amount || !selectedGroup) return;
 
-    const { error } = await supabase.from('expenses').insert([
-      {
-        group_id: selectedGroup.id,
-        paid_by: session.user.id,
-        title: title.trim(),
-        amount: parseFloat(amount),
-        category: category
+      // Pass description instead of title to match Supabase table schema
+      const { error } = await supabase.from('expenses').insert([
+        {
+          group_id: selectedGroup.id,
+          paid_by: session.user.id,
+          description: title.trim(),
+          amount: parseFloat(amount),
+          category: category
+        }
+      ]);
+
+      if (error) {
+        alert(`Error adding expense: ${error.message}`);
+      } else {
+        setTitle('');
+        setAmount('');
+        fetchExpenses(selectedGroup.id);
       }
-    ]);
+    };
 
     if (error) {
       alert(`Error adding expense: ${error.message}`);
@@ -280,7 +290,7 @@ function PocketCircleApp() {
             expenses.map(exp => (
               <div key={exp.id} style={styles.expenseRow}>
                 <div>
-                  <strong>{exp.title}</strong>
+                  <strong>{exp.description || exp.title}</strong>
                   <div style={{ fontSize: 12, color: '#777' }}>{exp.category}</div>
                 </div>
                 <div style={{ fontSize: 16, fontWeight: 'bold', color: '#2e7d32' }}>
