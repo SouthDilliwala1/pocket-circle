@@ -56,12 +56,11 @@ function PocketCircleApp() {
     e.preventDefault();
     if (!newGroupName.trim()) return;
 
-    // Send name, group_type, and owner_id
     const { data, error } = await supabase
       .from('groups')
       .insert([{ 
         name: newGroupName,
-        group_type: 'household',
+        group_type: 'Household',
         owner_id: session.user.id
       }])
       .select();
