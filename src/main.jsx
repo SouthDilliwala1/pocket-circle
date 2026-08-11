@@ -98,17 +98,25 @@ export default function PocketCircleApp() {
   // ── Profile — uses display_name (your DB column) ─────────────────────────
   const ensureProfile = async (user) => {
     const { data } = await supabase.from('profiles').select('*').eq('id', user.id).single();
+    const meta = user.user_metadata || {};
+    const avatarUrl = meta.avatar_url || meta.picture || meta.photo || null;
+    const displayName = meta.full_name || meta.name || meta.email || user.email;
     if (!data) {
-      const meta = user.user_metadata || {};
       await supabase.from('profiles').insert([{
         id: user.id,
-        display_name: meta.full_name || meta.name || user.email,
-        avatar_url: meta.avatar_url || meta.picture || null,
+        display_name: displayName,
+        avatar_url: avatarUrl,
       }]);
       const { data: newP } = await supabase.from('profiles').select('*').eq('id', user.id).single();
       setProfile(newP);
     } else {
-      setProfile(data);
+      // Always sync latest Google avatar in case it changed
+      if (avatarUrl && data.avatar_url !== avatarUrl) {
+        await supabase.from('profiles').update({ avatar_url: avatarUrl, display_name: displayName }).eq('id', user.id);
+        setProfile({ ...data, avatar_url: avatarUrl, display_name: displayName });
+      } else {
+        setProfile(data);
+      }
     }
   };
 
@@ -322,6 +330,22 @@ export default function PocketCircleApp() {
       .eq('group_id', selectedGroup.id).eq('user_id', userId);
     fetchMembers(selectedGroup.id);
     showToast('Member removed');
+  };
+
+  const deleteGroup = async () => {
+    if (!confirm(`Delete "${selectedGroup.name}"? This will permanently remove the group and all its expenses.`)) return;
+    if (!confirm('Are you sure? This cannot be undone.')) return;
+    // Soft delete all expenses first
+    await supabase.from('expenses').update({ is_deleted: true }).eq('group_id', selectedGroup.id);
+    // Remove all members
+    await supabase.from('group_members').delete().eq('group_id', selectedGroup.id);
+    // Delete the group
+    const { error } = await supabase.from('groups').delete().eq('id', selectedGroup.id);
+    if (error) { showToast('Error deleting group'); return; }
+    setSelectedGroup(null);
+    setScreen('home');
+    await fetchGroups();
+    showToast('Group deleted');
   };
 
   // ── Helpers ──────────────────────────────────────────────────────────────
@@ -552,6 +576,12 @@ export default function PocketCircleApp() {
               Leave Group
             </button>
           )}
+          {isAdmin && (
+            <button onClick={deleteGroup}
+              style={{ marginTop: 14, border: '1px solid #fca5a5', color: '#e53e3e', background: '#fff5f5', borderRadius: 10, padding: '8px 16px', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
+              🗑️ Delete Group
+            </button>
+          )}
         </div>
 
         {/* Expenses */}
@@ -716,4 +746,3 @@ const S = {
 ReactDOM.createRoot(document.getElementById('root')).render(
   <React.StrictMode><PocketCircleApp /></React.StrictMode>
 );
-
