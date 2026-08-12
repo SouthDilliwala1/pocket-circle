@@ -9,7 +9,7 @@ const supabase = createClient(supabaseUrl, supabaseAnonKey, {
     persistSession: true,
     autoRefreshToken: true,
     detectSessionInUrl: true,
-    storageKey: "pocketcircle-auth",
+    storageKey: 'pocketcircle-auth',
   }
 });
 
@@ -18,11 +18,17 @@ function generateCode() {
 }
 
 function Avatar({ url, name, size = 36, style = {} }) {
+  const [imgError, setImgError] = useState(false);
   const initial = (name || '?')[0].toUpperCase();
   const colors = ['#2d6a4f','#1e6091','#7b2d8b','#c05621','#276749','#2c5282'];
   const color = colors[(name || '').charCodeAt(0) % colors.length];
-  if (url) return (
-    <img src={url} alt={name} style={{ width: size, height: size, borderRadius: '50%', objectFit: 'cover', flexShrink: 0, ...style }} />
+  if (url && !imgError) return (
+    <img
+      src={url}
+      alt={name}
+      onError={() => setImgError(true)}
+      style={{ width: size, height: size, borderRadius: '50%', objectFit: 'cover', flexShrink: 0, ...style }}
+    />
   );
   return (
     <div style={{ width: size, height: size, borderRadius: '50%', background: color, color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700, fontSize: size * 0.4, flexShrink: 0, ...style }}>
@@ -32,10 +38,7 @@ function Avatar({ url, name, size = 36, style = {} }) {
 }
 
 function Toast({ message, onDone }) {
-  useEffect(() => {
-    const t = setTimeout(onDone, 3000);
-    return () => clearTimeout(t);
-  }, []);
+  useEffect(() => { const t = setTimeout(onDone, 3000); return () => clearTimeout(t); }, []);
   return (
     <div style={{ position: 'fixed', bottom: 90, left: '50%', transform: 'translateX(-50%)', background: '#1a1a1a', color: '#fff', padding: '12px 20px', borderRadius: 12, fontSize: 14, fontWeight: 600, zIndex: 9999, boxShadow: '0 4px 20px rgba(0,0,0,0.3)', whiteSpace: 'nowrap' }}>
       {message}
@@ -43,47 +46,49 @@ function Toast({ message, onDone }) {
   );
 }
 
-export default function PocketCircleApp() {
-  const [session, setSession]               = useState(null);
-  const [loading, setLoading]               = useState(true);
-  const [profile, setProfile]               = useState(null);
-  const [groups, setGroups]                 = useState([]);
-  const [selectedGroup, setSelectedGroup]   = useState(null);
-  const [groupMembers, setGroupMembers]     = useState([]);
-  const [expenses, setExpenses]             = useState([]);
-  const [notifications, setNotifications]   = useState([]);
-  const [unreadCount, setUnreadCount]       = useState(0);
-  const [toast, setToast]                   = useState('');
-  const [screen, setScreen]                 = useState('home');
-  const [showFab, setShowFab]               = useState(false);
+export default function App() {
+  const [session, setSession]                 = useState(null);
+  const [loading, setLoading]                 = useState(true);
+  const [profile, setProfile]                 = useState(null);
+  const [groups, setGroups]                   = useState([]);
+  const [selectedGroup, setSelectedGroup]     = useState(null);
+  const [groupMembers, setGroupMembers]       = useState([]);
+  const [expenses, setExpenses]               = useState([]);
+  const [notifications, setNotifications]     = useState([]);
+  const [unreadCount, setUnreadCount]         = useState(0);
+  const [toast, setToast]                     = useState('');
+  const [screen, setScreen]                   = useState('home');
+  const [showFab, setShowFab]                 = useState(false);
   const [showCreateModal, setShowCreateModal] = useState(false);
-  const [showJoinModal, setShowJoinModal]   = useState(false);
-  const [showAddExpense, setShowAddExpense] = useState(false);
-  const [showGroupCode, setShowGroupCode]   = useState(false);
-  const [showNotifs, setShowNotifs]         = useState(false);
-  const [editingExpense, setEditingExpense] = useState(null);
-  const [newGroupName, setNewGroupName]     = useState('');
-  const [newGroupType, setNewGroupType]     = useState('Household');
-  const [joinCode, setJoinCode]             = useState('');
-  const [expTitle, setExpTitle]             = useState('');
-  const [expAmount, setExpAmount]           = useState('');
-  const [expCategory, setExpCategory]       = useState('Groceries');
-  const [expPayment, setExpPayment]         = useState('UPI');
-  const [expNote, setExpNote]               = useState('');
-  const [expDate, setExpDate]               = useState('');
-  const [submitting, setSubmitting]         = useState(false);
+  const [showJoinModal, setShowJoinModal]     = useState(false);
+  const [showAddExpense, setShowAddExpense]   = useState(false);
+  const [showGroupCode, setShowGroupCode]     = useState(false);
+  const [showNotifs, setShowNotifs]           = useState(false);
+  const [editingExpense, setEditingExpense]   = useState(null);
+  const [newGroupName, setNewGroupName]       = useState('');
+  const [newGroupType, setNewGroupType]       = useState('Household');
+  const [joinCode, setJoinCode]               = useState('');
+
+  // Expense form state
+  const [expTitle, setExpTitle]       = useState('');
+  const [expAmount, setExpAmount]     = useState('');
+  const [expCategory, setExpCategory] = useState('Groceries');
+  const [expPayment, setExpPayment]   = useState('UPI');
+  const [expNote, setExpNote]         = useState('');
+  const [expDate, setExpDate]         = useState('');
+  const [expSplit, setExpSplit]       = useState('self'); // self | equal | exact | percentage
+  const [expPaidBy, setExpPaidBy]     = useState('');
+  const [submitting, setSubmitting]   = useState(false);
 
   const joinCodeRef = useRef(null);
 
-  // ── Auth ────────────────────────────────────────────────────────────────
+  // ── Auth ──────────────────────────────────────────────────────
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
       setSession(session);
       setLoading(false);
     });
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_e, session) => {
-      setSession(session);
-    });
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_e, s) => setSession(s));
     return () => subscription.unsubscribe();
   }, []);
 
@@ -102,69 +107,62 @@ export default function PocketCircleApp() {
     }
   }, [selectedGroup]);
 
-  // ── Profile — uses display_name (your DB column) ─────────────────────────
+  // ── Profile — always sync Google photo ────────────────────────
   const ensureProfile = async (user) => {
-    const { data } = await supabase.from('profiles').select('*').eq('id', user.id).single();
     const meta = user.user_metadata || {};
-    const avatarUrl = meta.avatar_url || meta.picture || meta.photo || null;
-    const displayName = meta.full_name || meta.name || meta.email || user.email;
-    if (!data) {
-      await supabase.from('profiles').insert([{
-        id: user.id,
-        display_name: displayName,
-        avatar_url: avatarUrl,
-      }]);
-      const { data: newP } = await supabase.from('profiles').select('*').eq('id', user.id).single();
-      setProfile(newP);
+    // Try every possible field Google might send
+    const avatarUrl = meta.avatar_url || meta.picture || meta.photo_url || meta.photo || null;
+    const displayName = meta.full_name || meta.name || user.email;
+
+    const { data, error } = await supabase
+      .from('profiles').select('*').eq('id', user.id).single();
+
+    if (error || !data) {
+      // Insert new profile
+      const { data: newP } = await supabase.from('profiles')
+        .insert([{ id: user.id, display_name: displayName, avatar_url: avatarUrl }])
+        .select().single();
+      setProfile(newP || { id: user.id, display_name: displayName, avatar_url: avatarUrl });
     } else {
-      // Always sync latest Google avatar in case it changed
-      if (avatarUrl && data.avatar_url !== avatarUrl) {
-        await supabase.from('profiles').update({ avatar_url: avatarUrl, display_name: displayName }).eq('id', user.id);
-        setProfile({ ...data, avatar_url: avatarUrl, display_name: displayName });
-      } else {
-        setProfile(data);
-      }
+      // Always update avatar from Google in case it changed
+      const { data: updated } = await supabase.from('profiles')
+        .update({ avatar_url: avatarUrl, display_name: displayName })
+        .eq('id', user.id).select().single();
+      setProfile(updated || data);
     }
   };
 
-  // ── Groups ───────────────────────────────────────────────────────────────
+  // ── Groups ─────────────────────────────────────────────────────
   const fetchGroups = async () => {
-    const { data, error } = await supabase.from('groups').select('*');
-    if (!error && data) setGroups(data);
+    const { data } = await supabase.from('groups').select('*');
+    if (data) setGroups(data);
   };
 
-  // uses display_name (your DB column)
   const fetchMembers = async (groupId) => {
-    const { data, error } = await supabase
+    const { data } = await supabase
       .from('group_members')
       .select('user_id, role, profiles(display_name, avatar_url)')
       .eq('group_id', groupId);
-    if (!error && data) setGroupMembers(data);
+    if (data) setGroupMembers(data);
   };
 
-  // uses is_deleted and spent_at (your DB columns)
   const fetchExpenses = async (groupId) => {
-    const { data, error } = await supabase
+    const { data } = await supabase
       .from('expenses')
       .select('*, profiles(display_name, avatar_url)')
       .eq('group_id', groupId)
       .eq('is_deleted', false)
       .order('spent_at', { ascending: false });
-    if (!error) setExpenses(data || []);
+    setExpenses(data || []);
   };
 
   const fetchNotifications = async () => {
     if (!session) return;
     const { data } = await supabase
-      .from('notifications')
-      .select('*')
+      .from('notifications').select('*')
       .eq('user_id', session.user.id)
-      .order('created_at', { ascending: false })
-      .limit(20);
-    if (data) {
-      setNotifications(data);
-      setUnreadCount(data.filter(n => !n.read).length);
-    }
+      .order('created_at', { ascending: false }).limit(20);
+    if (data) { setNotifications(data); setUnreadCount(data.filter(n => !n.read).length); }
   };
 
   const markNotifsRead = async () => {
@@ -174,77 +172,59 @@ export default function PocketCircleApp() {
     setNotifications(prev => prev.map(n => ({ ...n, read: true })));
   };
 
-  // ── Create Group ─────────────────────────────────────────────────────────
+  // ── Create Group ───────────────────────────────────────────────
   const createGroup = async () => {
     if (!newGroupName.trim() || submitting) return;
     setSubmitting(true);
     let code = generateCode();
-    let attempts = 0;
-    while (attempts < 10) {
+    for (let i = 0; i < 10; i++) {
       const { data: ex } = await supabase.from('groups').select('id').eq('invite_code', code).single();
       if (!ex) break;
       code = generateCode();
-      attempts++;
     }
-    const { data, error } = await supabase
-      .from('groups')
+    const { data, error } = await supabase.from('groups')
       .insert([{ name: newGroupName.trim(), group_type: newGroupType, owner_id: session.user.id, invite_code: code }])
       .select().single();
-
     if (error) { showToast('Error: ' + error.message); setSubmitting(false); return; }
-
-    await supabase.from('group_members').insert([{ group_id: data.id, user_id: session.user.id, role: 'owner' }]);
-
-    setNewGroupName('');
-    setNewGroupType('Household');
-    setShowCreateModal(false);
-    setSubmitting(false);
+    await supabase.from('group_members')
+      .insert([{ group_id: data.id, user_id: session.user.id, role: 'owner' }]);
+    setNewGroupName(''); setNewGroupType('Household');
+    setShowCreateModal(false); setSubmitting(false);
     await fetchGroups();
-    setSelectedGroup(data);
-    setScreen('group');
+    setSelectedGroup(data); setScreen('group');
     showToast('Group created! 🎉');
   };
 
-  // ── Join Group ───────────────────────────────────────────────────────────
+  // ── Join Group ─────────────────────────────────────────────────
   const joinGroup = async () => {
     const code = joinCode.trim();
     if (code.length !== 6 || submitting) return;
     setSubmitting(true);
-
     const { data: group, error } = await supabase.from('groups').select('*').eq('invite_code', code).single();
     if (error || !group) { showToast('Invalid code. Try again.'); setSubmitting(false); return; }
-
     const { data: existing } = await supabase.from('group_members')
       .select('user_id').eq('group_id', group.id).eq('user_id', session.user.id).single();
     if (existing) { showToast('Already in this group!'); setSubmitting(false); setJoinCode(''); setShowJoinModal(false); return; }
-
     const { count } = await supabase.from('group_members')
       .select('*', { count: 'exact', head: true }).eq('group_id', group.id);
-    if (count >= 11) { showToast('Group is full (10 members max)'); setSubmitting(false); return; }
-
-    await supabase.from('group_members').insert([{ group_id: group.id, user_id: session.user.id, role: 'member' }]);
-
-    // Notify admin
+    if (count >= 11) { showToast('Group is full!'); setSubmitting(false); return; }
+    await supabase.from('group_members')
+      .insert([{ group_id: group.id, user_id: session.user.id, role: 'member' }]);
     const memberName = profile?.display_name || session.user.email;
-    await supabase.from('notifications').insert([{
-      user_id: group.owner_id,
-      message: `${memberName} joined your group "${group.name}"`,
-    }]);
-
-    setJoinCode('');
-    setShowJoinModal(false);
-    setSubmitting(false);
+    await supabase.from('notifications')
+      .insert([{ user_id: group.owner_id, message: `${memberName} joined your group "${group.name}"` }]);
+    setJoinCode(''); setShowJoinModal(false); setSubmitting(false);
     await fetchGroups();
-    setSelectedGroup(group);
-    setScreen('group');
+    setSelectedGroup(group); setScreen('group');
     showToast(`Joined ${group.name}! 🎉`);
   };
 
-  // ── Expenses ─────────────────────────────────────────────────────────────
+  // ── Expenses ───────────────────────────────────────────────────
   const openAddExpense = () => {
     setEditingExpense(null);
     setExpTitle(''); setExpAmount(''); setExpCategory('Groceries');
-    setExpPayment('UPI'); setExpNote('');
+    setExpPayment('UPI'); setExpNote(''); setExpSplit('self');
+    setExpPaidBy(session.user.id);
     setExpDate(new Date().toISOString().slice(0, 16));
     setShowAddExpense(true);
   };
@@ -256,7 +236,8 @@ export default function PocketCircleApp() {
     setExpCategory(exp.category || 'Groceries');
     setExpPayment(exp.payment_method || 'UPI');
     setExpNote(exp.notes || '');
-    // uses spent_at (your DB column)
+    setExpSplit(exp.split_method || 'self');
+    setExpPaidBy(exp.paid_by || session.user.id);
     setExpDate(exp.spent_at ? exp.spent_at.slice(0, 16) : new Date().toISOString().slice(0, 16));
     setShowAddExpense(true);
   };
@@ -264,10 +245,9 @@ export default function PocketCircleApp() {
   const saveExpense = async () => {
     if (!expTitle.trim() || !expAmount || submitting) return;
     setSubmitting(true);
-
     const payload = {
       group_id: selectedGroup.id,
-      paid_by: session.user.id,
+      paid_by: expPaidBy || session.user.id,
       created_by: session.user.id,
       description: expTitle.trim(),
       amount: parseFloat(expAmount),
@@ -275,9 +255,9 @@ export default function PocketCircleApp() {
       payment_method: expPayment,
       notes: expNote.trim() || null,
       spent_at: expDate ? new Date(expDate).toISOString() : new Date().toISOString(),
+      split_method: expSplit,
       is_deleted: false,
     };
-
     if (editingExpense) {
       const { error } = await supabase.from('expenses').update(payload).eq('id', editingExpense.id);
       if (error) { showToast('Error: ' + error.message); setSubmitting(false); return; }
@@ -287,13 +267,10 @@ export default function PocketCircleApp() {
       if (error) { showToast('Error: ' + error.message); setSubmitting(false); return; }
       showToast('Expense added ✓');
     }
-
-    setShowAddExpense(false);
-    setSubmitting(false);
+    setShowAddExpense(false); setSubmitting(false);
     fetchExpenses(selectedGroup.id);
   };
 
-  // uses is_deleted (your DB column)
   const deleteExpense = async (expId) => {
     if (!confirm('Delete this expense?')) return;
     await supabase.from('expenses').update({ is_deleted: true }).eq('id', expId);
@@ -301,16 +278,14 @@ export default function PocketCircleApp() {
     fetchExpenses(selectedGroup.id);
   };
 
-  // ── Refresh invite code ──────────────────────────────────────────────────
+  // ── Refresh invite code ────────────────────────────────────────
   const refreshCode = async () => {
     if (!confirm('Generate a new code? The old one will stop working.')) return;
     let code = generateCode();
-    let attempts = 0;
-    while (attempts < 10) {
+    for (let i = 0; i < 10; i++) {
       const { data: ex } = await supabase.from('groups').select('id').eq('invite_code', code).single();
       if (!ex) break;
       code = generateCode();
-      attempts++;
     }
     const { error } = await supabase.from('groups').update({ invite_code: code }).eq('id', selectedGroup.id);
     if (error) { showToast('Error refreshing code'); return; }
@@ -320,14 +295,17 @@ export default function PocketCircleApp() {
     showToast('New code generated ✓');
   };
 
-  // ── Leave / Remove ───────────────────────────────────────────────────────
+  const copyCode = () => {
+    navigator.clipboard.writeText(selectedGroup?.invite_code || '');
+    showToast('Code copied!');
+  };
+
+  // ── Leave / Remove / Delete ────────────────────────────────────
   const leaveGroup = async () => {
     if (!confirm(`Leave "${selectedGroup.name}"?`)) return;
     await supabase.from('group_members').delete()
       .eq('group_id', selectedGroup.id).eq('user_id', session.user.id);
-    setSelectedGroup(null);
-    setScreen('home');
-    fetchGroups();
+    setSelectedGroup(null); setScreen('home'); fetchGroups();
     showToast('You left the group');
   };
 
@@ -340,47 +318,40 @@ export default function PocketCircleApp() {
   };
 
   const deleteGroup = async () => {
-    if (!confirm(`Delete "${selectedGroup.name}"? This will permanently remove the group and all its expenses.`)) return;
-    if (!confirm('Are you sure? This cannot be undone.')) return;
-    // Soft delete all expenses first
+    if (!confirm(`Delete "${selectedGroup.name}"? This cannot be undone.`)) return;
+    if (!confirm('Are you 100% sure?')) return;
     await supabase.from('expenses').update({ is_deleted: true }).eq('group_id', selectedGroup.id);
-    // Remove all members
     await supabase.from('group_members').delete().eq('group_id', selectedGroup.id);
-    // Delete the group
-    const { error } = await supabase.from('groups').delete().eq('id', selectedGroup.id);
-    if (error) { showToast('Error deleting group'); return; }
-    setSelectedGroup(null);
-    setScreen('home');
+    await supabase.from('groups').delete().eq('id', selectedGroup.id);
+    setSelectedGroup(null); setScreen('home');
     await fetchGroups();
     showToast('Group deleted');
   };
 
-  // ── Helpers ──────────────────────────────────────────────────────────────
   const showToast = (msg) => setToast(msg);
   const isAdmin = selectedGroup && session && selectedGroup.owner_id === session.user.id;
   const totalExpenses = expenses.reduce((s, e) => s + Number(e.amount || 0), 0);
-  const copyCode = () => { navigator.clipboard.writeText(selectedGroup?.invite_code || ''); showToast('Code copied!'); };
   const handleLogout = async () => { await supabase.auth.signOut(); setGroups([]); setSelectedGroup(null); setScreen('home'); };
 
-  // ── Loading ──────────────────────────────────────────────────────────────
+  // ── Loading ────────────────────────────────────────────────────
   if (loading) return (
-    <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#f4f7f4', fontFamily: 'system-ui, sans-serif' }}>
+    <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#f4f7f4', fontFamily: 'system-ui,sans-serif' }}>
       <div style={{ textAlign: 'center' }}>
-        <div style={{ width: 52, height: 52, borderRadius: 14, background: '#22533e', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 26, fontWeight: 800, margin: '0 auto 16px' }}>P</div>
-        <div style={{ color: '#22533e', fontWeight: 700, fontSize: 16 }}>Loading PocketCircle…</div>
+        <div style={{ width: 56, height: 56, borderRadius: 14, background: '#22533e', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 28, fontWeight: 800, margin: '0 auto 14px' }}>P</div>
+        <div style={{ color: '#22533e', fontWeight: 700 }}>Loading…</div>
       </div>
     </div>
   );
 
-  // ── Sign In ──────────────────────────────────────────────────────────────
+  // ── Sign In ────────────────────────────────────────────────────
   if (!session) return (
-    <div style={{ minHeight: '100vh', background: 'linear-gradient(160deg,#eaf4ee 0%,#f4f7f4 100%)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: 'system-ui, sans-serif', padding: 20 }}>
+    <div style={{ minHeight: '100vh', background: 'linear-gradient(160deg,#eaf4ee,#f4f7f4)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: 'system-ui,sans-serif', padding: 20 }}>
       <div style={{ background: '#fff', borderRadius: 24, padding: '40px 32px', maxWidth: 360, width: '100%', textAlign: 'center', boxShadow: '0 8px 40px rgba(0,0,0,0.10)' }}>
         <div style={{ width: 64, height: 64, borderRadius: 18, background: '#22533e', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 34, fontWeight: 800, margin: '0 auto 16px' }}>P</div>
         <h1 style={{ margin: '0 0 6px', fontSize: 26, fontWeight: 800, color: '#1a1a1a' }}>PocketCircle</h1>
         <p style={{ color: '#666', marginBottom: 32, fontSize: 15 }}>Shared expenses, made simple.</p>
         <button onClick={() => supabase.auth.signInWithOAuth({ provider: 'google', options: { redirectTo: window.location.origin } })}
-          style={{ width: '100%', padding: '14px', background: '#fff', color: '#333', border: '1.5px solid #ddd', borderRadius: 12, fontWeight: 700, fontSize: 16, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10 }}>
+          style={{ width: '100%', padding: 14, background: '#fff', color: '#333', border: '1.5px solid #ddd', borderRadius: 12, fontWeight: 700, fontSize: 16, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10 }}>
           <svg width="20" height="20" viewBox="0 0 48 48"><path fill="#4285F4" d="M43.6 20.5H42V20H24v8h11.3C33.7 32.7 29.2 36 24 36c-6.6 0-12-5.4-12-12s5.4-12 12-12c3.1 0 5.8 1.1 7.9 3l5.7-5.7C34.1 6.5 29.3 4 24 4 12.9 4 4 12.9 4 24s8.9 20 20 20 20-8.9 20-20c0-1.2-.1-2.4-.4-3.5z"/><path fill="#34A853" d="M6.3 14.7l6.6 4.8C14.7 16.1 19 13 24 13c3.1 0 5.8 1.1 7.9 3l5.7-5.7C34.1 6.5 29.3 4 24 4 16.3 4 9.7 8.4 6.3 14.7z"/><path fill="#FBBC05" d="M24 44c5.2 0 9.9-1.9 13.4-5l-6.2-5.2C29.3 35.5 26.8 36 24 36c-5.2 0-9.7-3.3-11.3-7.9l-6.6 4.8C9.6 39.4 16.3 44 24 44z"/><path fill="#EA4335" d="M43.6 20.5H42V20H24v8h11.3c-.8 2.2-2.2 4.1-4.1 5.6l6.2 5.2C42.5 35.4 44 30 44 24c0-1.2-.1-2.4-.4-3.5z"/></svg>
           Sign in with Google
         </button>
@@ -388,9 +359,9 @@ export default function PocketCircleApp() {
     </div>
   );
 
-  // ══════════════════════════════════════════════════════════════
+  // ══════════════════════════════════════════
   //  HOME SCREEN
-  // ══════════════════════════════════════════════════════════════
+  // ══════════════════════════════════════════
   if (screen === 'home') return (
     <div style={S.app}>
       <header style={S.header}>
@@ -398,14 +369,14 @@ export default function PocketCircleApp() {
           <div style={S.logoBadge}>P</div>
           <div>
             <div style={{ fontWeight: 800, fontSize: 17, color: '#1a1a1a' }}>PocketCircle</div>
-            <div style={{ fontSize: 12, color: '#666' }}>Shared expenses</div>
+            <div style={{ fontSize: 12, color: '#666' }}>Hi, {profile?.display_name?.split(' ')[0] || 'there'} 👋</div>
           </div>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           <button onClick={() => { setShowNotifs(true); markNotifsRead(); }} style={{ ...S.iconBtn, position: 'relative' }}>
             🔔{unreadCount > 0 && <span style={S.badge}>{unreadCount}</span>}
           </button>
-          <Avatar url={profile?.avatar_url} name={profile?.display_name || session.user.email} size={34} />
+          <Avatar url={profile?.avatar_url} name={profile?.display_name || 'U'} size={36} />
           <button onClick={handleLogout} style={S.logoutBtn}>Sign out</button>
         </div>
       </header>
@@ -424,41 +395,32 @@ export default function PocketCircleApp() {
               {g.group_type === 'Trip' ? '🌴' : '🏠'}
             </div>
             <div style={{ flex: 1, minWidth: 0 }}>
-              <div style={{ fontWeight: 700, fontSize: 15, color: '#1a1a1a', marginBottom: 2 }}>{g.name}</div>
-              <div style={{ fontSize: 12, color: '#888' }}>{g.group_type}</div>
+              <div style={{ fontWeight: 700, fontSize: 15, color: '#1a1a1a' }}>{g.name}</div>
+              <div style={{ fontSize: 12, color: '#888', marginTop: 2 }}>{g.group_type}</div>
             </div>
             <div style={{ color: '#bbb', fontSize: 20 }}>›</div>
           </div>
         ))}
       </div>
 
-      {/* FAB */}
       <button onClick={() => setShowFab(true)} style={S.fab}>+</button>
 
-      {/* FAB Sheet */}
       {showFab && (
         <div style={S.overlay} onClick={() => setShowFab(false)}>
           <div style={{ ...S.sheet, padding: '24px 20px 36px' }} onClick={e => e.stopPropagation()}>
             <div style={{ fontWeight: 700, fontSize: 16, marginBottom: 16, color: '#333' }}>What would you like to do?</div>
             <button onClick={() => { setShowFab(false); setShowCreateModal(true); }} style={S.sheetBtn}>
               <span style={{ fontSize: 24 }}>➕</span>
-              <div>
-                <div style={{ fontWeight: 700, fontSize: 15 }}>Create a group</div>
-                <div style={{ fontSize: 12, color: '#888' }}>Start a new household or trip</div>
-              </div>
+              <div><div style={{ fontWeight: 700, fontSize: 15 }}>Create a group</div><div style={{ fontSize: 12, color: '#888' }}>Start a new household or trip</div></div>
             </button>
             <button onClick={() => { setShowFab(false); setShowJoinModal(true); setTimeout(() => joinCodeRef.current?.focus(), 200); }} style={S.sheetBtn}>
               <span style={{ fontSize: 24 }}>🔢</span>
-              <div>
-                <div style={{ fontWeight: 700, fontSize: 15 }}>Join a group</div>
-                <div style={{ fontSize: 12, color: '#888' }}>Enter a 6-digit invite code</div>
-              </div>
+              <div><div style={{ fontWeight: 700, fontSize: 15 }}>Join a group</div><div style={{ fontSize: 12, color: '#888' }}>Enter a 6-digit invite code</div></div>
             </button>
           </div>
         </div>
       )}
 
-      {/* Create Group Modal */}
       {showCreateModal && (
         <div style={S.overlay} onClick={() => setShowCreateModal(false)}>
           <div style={S.modal} onClick={e => e.stopPropagation()}>
@@ -471,7 +433,7 @@ export default function PocketCircleApp() {
             <div style={{ display: 'flex', gap: 10, marginBottom: 20 }}>
               {['Household','Trip'].map(t => (
                 <button key={t} onClick={() => setNewGroupType(t)}
-                  style={{ ...S.chip, ...(newGroupType === t ? S.chipActive : {}), flex: 1, justifyContent: 'center' }}>
+                  style={{ ...S.chip, ...(newGroupType === t ? S.chipActive : {}), flex: 1, textAlign: 'center' }}>
                   {t === 'Trip' ? '🌴' : '🏠'} {t}
                 </button>
               ))}
@@ -486,21 +448,15 @@ export default function PocketCircleApp() {
         </div>
       )}
 
-      {/* Join Group Modal */}
       {showJoinModal && (
         <div style={S.overlay} onClick={() => setShowJoinModal(false)}>
           <div style={S.modal} onClick={e => e.stopPropagation()}>
             <div style={S.modalTitle}>Join a Group</div>
-            <p style={{ color: '#666', fontSize: 14, marginBottom: 16 }}>Enter the 6-digit code shared by the group admin.</p>
-            <input
-              ref={joinCodeRef}
-              value={joinCode}
-              onChange={e => setJoinCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
-              placeholder="000000"
-              maxLength={6}
-              inputMode="numeric"
-              style={{ ...S.input, fontSize: 32, fontWeight: 800, letterSpacing: 10, textAlign: 'center', marginBottom: 16 }}
-            />
+            <p style={{ color: '#666', fontSize: 14, marginBottom: 16 }}>Enter the 6-digit code from the group admin.</p>
+            <input ref={joinCodeRef} value={joinCode}
+              onChange={e => setJoinCode(e.target.value.replace(/\D/g,'').slice(0,6))}
+              placeholder="000000" maxLength={6} inputMode="numeric"
+              style={{ ...S.input, fontSize: 32, fontWeight: 800, letterSpacing: 10, textAlign: 'center', marginBottom: 16 }} />
             <div style={{ display: 'flex', gap: 10 }}>
               <button onClick={() => { setShowJoinModal(false); setJoinCode(''); }} style={S.cancelBtn}>Cancel</button>
               <button onClick={joinGroup} disabled={submitting || joinCode.length !== 6} style={S.primaryBtn}>
@@ -511,15 +467,14 @@ export default function PocketCircleApp() {
         </div>
       )}
 
-      {/* Notifications */}
       {showNotifs && <NotifsDrawer notifications={notifications} onClose={() => setShowNotifs(false)} />}
       {toast && <Toast message={toast} onDone={() => setToast('')} />}
     </div>
   );
 
-  // ══════════════════════════════════════════════════════════════
+  // ══════════════════════════════════════════
   //  GROUP SCREEN
-  // ══════════════════════════════════════════════════════════════
+  // ══════════════════════════════════════════
   return (
     <div style={S.app}>
       <header style={S.header}>
@@ -538,7 +493,7 @@ export default function PocketCircleApp() {
           <div>
             <div style={{ fontSize: 11, fontWeight: 700, opacity: 0.8, letterSpacing: 1, textTransform: 'uppercase' }}>{selectedGroup?.group_type}</div>
             <div style={{ fontSize: 30, fontWeight: 800, marginTop: 4 }}>₹{totalExpenses.toLocaleString('en-IN')}</div>
-            <div style={{ fontSize: 12, opacity: 0.85, marginTop: 2 }}>Total · {expenses.length} {expenses.length === 1 ? 'entry' : 'entries'}</div>
+            <div style={{ fontSize: 12, opacity: 0.85, marginTop: 2 }}>{expenses.length} {expenses.length === 1 ? 'expense' : 'expenses'}</div>
           </div>
           {isAdmin && (
             <button onClick={() => setShowGroupCode(true)}
@@ -550,15 +505,15 @@ export default function PocketCircleApp() {
 
         {/* Members */}
         <div style={S.section}>
-          <div style={S.sectionTitle}>Members ({groupMembers.length})</div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+          <div style={{ ...S.sectionTitle, marginBottom: 12 }}>Members ({groupMembers.length})</div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
             {groupMembers.map(m => {
               const p = m.profiles || {};
               const isMe = m.user_id === session.user.id;
               const isOwner = m.role === 'owner';
               return (
                 <div key={m.user_id} style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                  <Avatar url={p.avatar_url} name={p.display_name || '?'} size={38} />
+                  <Avatar url={p.avatar_url} name={p.display_name || '?'} size={40} />
                   <div style={{ flex: 1 }}>
                     <div style={{ fontWeight: 600, fontSize: 14, color: '#1a1a1a' }}>
                       {p.display_name || 'Member'}{isMe ? ' (You)' : ''}
@@ -569,7 +524,7 @@ export default function PocketCircleApp() {
                   </div>
                   {isAdmin && !isMe && !isOwner && (
                     <button onClick={() => removeMember(m.user_id)}
-                      style={{ background: 'none', border: '1px solid #fca5a5', color: '#e53e3e', borderRadius: 8, padding: '4px 10px', fontSize: 12, cursor: 'pointer', fontWeight: 600 }}>
+                      style={{ border: '1px solid #fca5a5', color: '#e53e3e', background: 'none', borderRadius: 8, padding: '4px 10px', fontSize: 12, cursor: 'pointer', fontWeight: 600 }}>
                       Remove
                     </button>
                   )}
@@ -577,18 +532,20 @@ export default function PocketCircleApp() {
               );
             })}
           </div>
-          {!isAdmin && (
-            <button onClick={leaveGroup}
-              style={{ marginTop: 14, border: '1px solid #fca5a5', color: '#e53e3e', background: 'none', borderRadius: 10, padding: '8px 16px', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
-              Leave Group
-            </button>
-          )}
-          {isAdmin && (
-            <button onClick={deleteGroup}
-              style={{ marginTop: 14, border: '1px solid #fca5a5', color: '#e53e3e', background: '#fff5f5', borderRadius: 10, padding: '8px 16px', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
-              🗑️ Delete Group
-            </button>
-          )}
+          <div style={{ display: 'flex', gap: 10, marginTop: 14, flexWrap: 'wrap' }}>
+            {!isAdmin && (
+              <button onClick={leaveGroup}
+                style={{ border: '1px solid #fca5a5', color: '#e53e3e', background: 'none', borderRadius: 10, padding: '8px 16px', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
+                Leave Group
+              </button>
+            )}
+            {isAdmin && (
+              <button onClick={deleteGroup}
+                style={{ border: '1px solid #fca5a5', color: '#e53e3e', background: '#fff5f5', borderRadius: 10, padding: '8px 16px', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
+                🗑️ Delete Group
+              </button>
+            )}
+          </div>
         </div>
 
         {/* Expenses */}
@@ -603,7 +560,8 @@ export default function PocketCircleApp() {
             </div>
           ) : expenses.map(exp => {
             const paidBy = exp.profiles || {};
-            const isMyExp = exp.paid_by === session.user.id;
+            const isMyExp = exp.created_by === session.user.id;
+            const splitLabel = { self: 'Paid by self', equal: 'Split equally', exact: 'Exact split', percentage: '% split' };
             return (
               <div key={exp.id} style={S.expenseRow}>
                 <Avatar url={paidBy.avatar_url} name={paidBy.display_name || '?'} size={40} />
@@ -612,9 +570,10 @@ export default function PocketCircleApp() {
                   <div style={{ fontSize: 12, color: '#888', marginTop: 2 }}>
                     {paidBy.display_name || 'Member'} · {exp.category} · {exp.payment_method}
                   </div>
-                  {exp.notes && (
-                    <div style={{ fontSize: 12, color: '#666', marginTop: 3, fontStyle: 'italic' }}>"{exp.notes}"</div>
-                  )}
+                  <div style={{ display: 'flex', gap: 6, marginTop: 4, flexWrap: 'wrap' }}>
+                    <span style={S.tag}>{splitLabel[exp.split_method] || 'Paid by self'}</span>
+                  </div>
+                  {exp.notes && <div style={{ fontSize: 12, color: '#666', marginTop: 3, fontStyle: 'italic' }}>"{exp.notes}"</div>}
                   <div style={{ fontSize: 11, color: '#bbb', marginTop: 3 }}>
                     {exp.spent_at ? new Date(exp.spent_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) : ''}
                   </div>
@@ -637,29 +596,71 @@ export default function PocketCircleApp() {
       {/* Add/Edit Expense Modal */}
       {showAddExpense && (
         <div style={S.overlay} onClick={() => setShowAddExpense(false)}>
-          <div style={{ ...S.modal, maxHeight: '90vh', overflowY: 'auto' }} onClick={e => e.stopPropagation()}>
+          <div style={{ ...S.modal, maxHeight: '92vh', overflowY: 'auto' }} onClick={e => e.stopPropagation()}>
             <div style={S.modalTitle}>{editingExpense ? 'Edit Expense' : 'Add Expense'}</div>
+
             <label style={S.label}>Description *</label>
-            <input autoFocus value={expTitle} onChange={e => setExpTitle(e.target.value)} placeholder="What was this for?" style={S.input} />
+            <input autoFocus value={expTitle} onChange={e => setExpTitle(e.target.value)}
+              placeholder="What was this for?" style={S.input} />
+
             <label style={S.label}>Amount (₹) *</label>
-            <input type="number" value={expAmount} onChange={e => setExpAmount(e.target.value)} placeholder="0" inputMode="decimal" style={S.input} />
+            <input type="number" value={expAmount} onChange={e => setExpAmount(e.target.value)}
+              placeholder="0" inputMode="decimal" style={S.input} />
+
+            <label style={S.label}>Paid By</label>
+            <div style={S.chipRow}>
+              {groupMembers.map(m => {
+                const p = m.profiles || {};
+                const isSelected = expPaidBy === m.user_id;
+                return (
+                  <button key={m.user_id} onClick={() => setExpPaidBy(m.user_id)}
+                    style={{ ...S.chip, ...(isSelected ? S.chipActive : {}), display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <Avatar url={p.avatar_url} name={p.display_name || '?'} size={20} />
+                    {m.user_id === session.user.id ? 'You' : (p.display_name?.split(' ')[0] || 'Member')}
+                  </button>
+                );
+              })}
+            </div>
+
+            <label style={S.label}>Split Type</label>
+            <div style={S.chipRow}>
+              {[
+                { key: 'self', label: '👤 Self' },
+                { key: 'equal', label: '⚖️ Equal' },
+                { key: 'exact', label: '🔢 Exact' },
+                { key: 'percentage', label: '% Percent' },
+              ].map(s => (
+                <button key={s.key} onClick={() => setExpSplit(s.key)}
+                  style={{ ...S.chip, ...(expSplit === s.key ? S.chipActive : {}) }}>
+                  {s.label}
+                </button>
+              ))}
+            </div>
+
             <label style={S.label}>Category</label>
             <div style={S.chipRow}>
               {['Groceries','Rent/Bills','Dining','Fuel','Trip','Shopping','Other'].map(c => (
-                <button key={c} onClick={() => setExpCategory(c)} style={{ ...S.chip, ...(expCategory === c ? S.chipActive : {}) }}>{c}</button>
+                <button key={c} onClick={() => setExpCategory(c)}
+                  style={{ ...S.chip, ...(expCategory === c ? S.chipActive : {}) }}>{c}</button>
               ))}
             </div>
-            <label style={S.label}>Payment</label>
+
+            <label style={S.label}>Payment Method</label>
             <div style={S.chipRow}>
               {['UPI','Cash','Credit','Debit'].map(p => (
-                <button key={p} onClick={() => setExpPayment(p)} style={{ ...S.chip, ...(expPayment === p ? S.chipActive : {}) }}>{p}</button>
+                <button key={p} onClick={() => setExpPayment(p)}
+                  style={{ ...S.chip, ...(expPayment === p ? S.chipActive : {}) }}>{p}</button>
               ))}
             </div>
+
             <label style={S.label}>Date & Time</label>
             <input type="datetime-local" value={expDate} onChange={e => setExpDate(e.target.value)} style={S.input} />
+
             <label style={S.label}>Notes (optional)</label>
-            <input value={expNote} onChange={e => setExpNote(e.target.value)} placeholder="Add a note…" style={S.input} />
-            <div style={{ display: 'flex', gap: 10, marginTop: 8 }}>
+            <input value={expNote} onChange={e => setExpNote(e.target.value)}
+              placeholder="Add a note…" style={S.input} />
+
+            <div style={{ display: 'flex', gap: 10, marginTop: 10 }}>
               <button onClick={() => setShowAddExpense(false)} style={S.cancelBtn}>Cancel</button>
               <button onClick={saveExpense} disabled={submitting || !expTitle.trim() || !expAmount} style={S.primaryBtn}>
                 {submitting ? 'Saving…' : editingExpense ? 'Update' : 'Save'}
@@ -675,16 +676,16 @@ export default function PocketCircleApp() {
           <div style={S.modal} onClick={e => e.stopPropagation()}>
             <div style={S.modalTitle}>Invite Code</div>
             <p style={{ color: '#666', fontSize: 14, marginBottom: 16 }}>
-              Share this code with anyone you want to invite to <strong>{selectedGroup.name}</strong>.
+              Share this code to invite someone to <strong>{selectedGroup.name}</strong>.
             </p>
-            <div style={{ background: '#f4f7f4', borderRadius: 16, padding: '24px', textAlign: 'center', marginBottom: 20 }}>
+            <div style={{ background: '#f4f7f4', borderRadius: 16, padding: 24, textAlign: 'center', marginBottom: 20 }}>
               <div style={{ fontSize: 44, fontWeight: 900, letterSpacing: 12, color: '#22533e' }}>
                 {selectedGroup.invite_code}
               </div>
-              <div style={{ fontSize: 12, color: '#888', marginTop: 8 }}>Permanent · Only you can reset it</div>
+              <div style={{ fontSize: 12, color: '#888', marginTop: 8 }}>Permanent · Only admin can reset</div>
             </div>
             <div style={{ display: 'flex', gap: 10, marginBottom: 10 }}>
-              <button onClick={copyCode} style={{ ...S.cancelBtn, flex: 1 }}>📋 Copy</button>
+              <button onClick={copyCode} style={{ ...S.cancelBtn, flex: 1 }}>📋 Copy Code</button>
               <button onClick={refreshCode} style={{ ...S.cancelBtn, flex: 1, color: '#c05621', borderColor: '#fed7aa' }}>🔄 New Code</button>
             </div>
             <button onClick={() => setShowGroupCode(false)} style={{ ...S.primaryBtn, width: '100%' }}>Done</button>
@@ -698,28 +699,27 @@ export default function PocketCircleApp() {
   );
 }
 
-// ── Notifications Drawer ─────────────────────────────────────────────────────
 function NotifsDrawer({ notifications, onClose }) {
   return (
     <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)', display: 'flex', alignItems: 'flex-end', justifyContent: 'center', zIndex: 100 }} onClick={onClose}>
       <div style={{ background: '#fff', borderRadius: '20px 20px 0 0', width: '100%', maxWidth: 480, padding: '20px 16px 36px', maxHeight: '70vh', overflowY: 'auto' }} onClick={e => e.stopPropagation()}>
         <div style={{ fontWeight: 700, fontSize: 16, marginBottom: 16 }}>Notifications</div>
-        {notifications.length === 0 ? (
-          <div style={{ color: '#888', fontSize: 14, textAlign: 'center', padding: '30px 0' }}>No notifications yet</div>
-        ) : notifications.map(n => (
-          <div key={n.id} style={{ padding: '10px 0', borderBottom: '1px solid #f0f0f0', fontSize: 14, color: n.read ? '#888' : '#1a1a1a', fontWeight: n.read ? 400 : 600 }}>
-            <div>{n.message}</div>
-            <div style={{ fontSize: 11, color: '#bbb', marginTop: 3 }}>{new Date(n.created_at).toLocaleString('en-IN')}</div>
-          </div>
-        ))}
+        {notifications.length === 0
+          ? <div style={{ color: '#888', fontSize: 14, textAlign: 'center', padding: '30px 0' }}>No notifications yet</div>
+          : notifications.map(n => (
+            <div key={n.id} style={{ padding: '10px 0', borderBottom: '1px solid #f0f0f0', fontSize: 14, color: n.read ? '#888' : '#1a1a1a', fontWeight: n.read ? 400 : 600 }}>
+              <div>{n.message}</div>
+              <div style={{ fontSize: 11, color: '#bbb', marginTop: 3 }}>{new Date(n.created_at).toLocaleString('en-IN')}</div>
+            </div>
+          ))
+        }
       </div>
     </div>
   );
 }
 
-// ── Styles ───────────────────────────────────────────────────────────────────
 const S = {
-  app:         { minHeight: '100vh', background: '#f4f7f4', fontFamily: 'system-ui, -apple-system, sans-serif', display: 'flex', flexDirection: 'column', maxWidth: 480, margin: '0 auto', position: 'relative' },
+  app:         { minHeight: '100vh', background: '#f4f7f4', fontFamily: 'system-ui,-apple-system,sans-serif', display: 'flex', flexDirection: 'column', maxWidth: 480, margin: '0 auto', position: 'relative' },
   header:      { display: 'flex', alignItems: 'center', gap: 10, padding: '12px 16px', background: '#fff', borderBottom: '1px solid #eee', position: 'sticky', top: 0, zIndex: 10 },
   logoBadge:   { width: 36, height: 36, borderRadius: 10, background: '#22533e', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 20, fontWeight: 800, flexShrink: 0 },
   logoutBtn:   { border: '1px solid #ddd', background: '#fff', borderRadius: 8, padding: '5px 10px', fontSize: 12, cursor: 'pointer', color: '#555', fontWeight: 600 },
@@ -730,12 +730,13 @@ const S = {
   emptyState:  { textAlign: 'center', padding: '80px 20px', color: '#888' },
   groupCard:   { display: 'flex', alignItems: 'center', gap: 14, background: '#fff', borderRadius: 16, padding: '14px 16px', marginBottom: 10, cursor: 'pointer', boxShadow: '0 1px 4px rgba(0,0,0,0.06)', border: '1px solid #eee' },
   groupIconBox:{ width: 44, height: 44, borderRadius: 12, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 22, flexShrink: 0 },
-  bannerCard:  { background: 'linear-gradient(135deg,#22533e,#2d7a57)', borderRadius: 20, padding: '20px', color: '#fff', marginBottom: 16, display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' },
+  bannerCard:  { background: 'linear-gradient(135deg,#22533e,#2d7a57)', borderRadius: 20, padding: 20, color: '#fff', marginBottom: 16, display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' },
   section:     { background: '#fff', borderRadius: 16, padding: 16, marginBottom: 14, border: '1px solid #eee' },
   sectionTitle:{ fontWeight: 700, fontSize: 15, color: '#1a1a1a', marginBottom: 0 },
   expenseRow:  { display: 'flex', gap: 12, alignItems: 'flex-start', padding: '12px 0', borderBottom: '1px solid #f5f5f5' },
   miniBtn:     { fontSize: 12, padding: '3px 8px', border: '1px solid #ddd', borderRadius: 6, background: '#fff', cursor: 'pointer', color: '#555', fontWeight: 600 },
   addBtn:      { background: '#22533e', color: '#fff', border: 'none', borderRadius: 10, padding: '8px 16px', fontWeight: 700, fontSize: 14, cursor: 'pointer' },
+  tag:         { background: '#e8f5e9', color: '#22533e', borderRadius: 6, padding: '2px 8px', fontSize: 11, fontWeight: 600 },
   overlay:     { position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)', display: 'flex', alignItems: 'flex-end', justifyContent: 'center', zIndex: 100 },
   sheet:       { background: '#fff', borderRadius: '20px 20px 0 0', width: '100%', maxWidth: 480 },
   modal:       { background: '#fff', borderRadius: 20, width: 'calc(100% - 32px)', maxWidth: 440, padding: '24px 20px', margin: '0 16px 40px', boxShadow: '0 8px 40px rgba(0,0,0,0.18)' },
@@ -746,10 +747,10 @@ const S = {
   chipRow:     { display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 4 },
   chip:        { padding: '7px 14px', borderRadius: 999, border: '1.5px solid #ddd', background: '#fff', fontSize: 13, fontWeight: 600, cursor: 'pointer', color: '#555' },
   chipActive:  { background: '#e8f5e9', borderColor: '#22533e', color: '#22533e' },
-  primaryBtn:  { flex: 1, padding: '12px', background: '#22533e', color: '#fff', border: 'none', borderRadius: 12, fontWeight: 700, fontSize: 15, cursor: 'pointer' },
-  cancelBtn:   { flex: 1, padding: '12px', background: '#fff', color: '#333', border: '1.5px solid #ddd', borderRadius: 12, fontWeight: 600, fontSize: 15, cursor: 'pointer' },
+  primaryBtn:  { flex: 1, padding: 12, background: '#22533e', color: '#fff', border: 'none', borderRadius: 12, fontWeight: 700, fontSize: 15, cursor: 'pointer' },
+  cancelBtn:   { flex: 1, padding: 12, background: '#fff', color: '#333', border: '1.5px solid #ddd', borderRadius: 12, fontWeight: 600, fontSize: 15, cursor: 'pointer' },
 };
 
 ReactDOM.createRoot(document.getElementById('root')).render(
-  <React.StrictMode><PocketCircleApp /></React.StrictMode>
+  <React.StrictMode><App /></React.StrictMode>
 );
