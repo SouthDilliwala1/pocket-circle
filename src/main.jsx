@@ -143,6 +143,7 @@ export default function App() {
     const { data } = await supabase
       .from('expenses')
       .select('*, profiles(display_name, avatar_url)')
+      .gt('id', '00000000-0000-0000-0000-000000000000')
       .eq('group_id', groupId)
       .order('spent_at', { ascending: false });
     setExpenses(data || []);
@@ -260,7 +261,8 @@ export default function App() {
       showToast('Expense added ✓');
     }
     setShowAddExpense(false); setSubmitting(false);
-    fetchExpenses(selectedGroup.id);
+    setExpenses([]);
+    await fetchExpenses(selectedGroup.id);
   };
 
   const deleteExpense = async (expId) => {
