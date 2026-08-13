@@ -143,7 +143,7 @@ export default function App() {
     const timestamp = Date.now();
     const { data } = await supabase
       .from('expenses')
-      .select('*, profiles(display_name, avatar_url)')
+      .select('*, paid_by_profile:profiles!expenses_paid_by_fkey(display_name, avatar_url)')
       .eq('group_id', groupId)
       .order('spent_at', { ascending: false })
       .limit(100);
@@ -554,7 +554,7 @@ export default function App() {
               No expenses yet. Tap + Add to record one.
             </div>
           ) : expenses.map(exp => {
-            const paidBy = exp.profiles || {};
+            const paidBy = exp.paid_by_profile || {};
             const isMyExp = exp.created_by === session.user.id;
             const splitLabel = { self: 'Paid by self', equal: 'Split equally', exact: 'Exact split', percentage: '% split' };
             return (
