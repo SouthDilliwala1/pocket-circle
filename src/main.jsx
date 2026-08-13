@@ -270,7 +270,8 @@ export default function App() {
     if (!confirm('Delete this expense?')) return;
     await supabase.from('expenses').update({ is_deleted: true }).eq('id', expId);
     showToast('Expense removed');
-    fetchExpenses(selectedGroup.id);
+    setExpenses([]);
+    await fetchExpenses(selectedGroup.id);
   };
 
   // ── Refresh invite code ────────────────────────────────────────
@@ -599,7 +600,8 @@ export default function App() {
               placeholder="What was this for?" style={S.input} />
 
             <label style={S.label}>Amount (₹) *</label>
-            <input type="number" value={expAmount} onChange={e => setExpAmount(e.target.value)}
+            <input type="text" pattern="[0-9]*" value={expAmount} 
+              onChange={e => setExpAmount(e.target.value.replace(/[^0-9.]/g, ''))}
               placeholder="0" inputMode="decimal" style={S.input} />
 
             <label style={S.label}>Paid By</label>
