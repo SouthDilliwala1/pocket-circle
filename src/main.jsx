@@ -140,12 +140,13 @@ export default function App() {
   };
 
   const fetchExpenses = async (groupId) => {
+    const timestamp = Date.now();
     const { data } = await supabase
       .from('expenses')
       .select('*, profiles(display_name, avatar_url)')
-      .gt('id', '00000000-0000-0000-0000-000000000000')
       .eq('group_id', groupId)
-      .order('spent_at', { ascending: false });
+      .order('spent_at', { ascending: false })
+      .limit(100);
     setExpenses(data || []);
   };
 
