@@ -144,7 +144,6 @@ export default function App() {
       .from('expenses')
       .select('*, profiles(display_name, avatar_url)')
       .eq('group_id', groupId)
-      .eq('is_deleted', false)
       .order('spent_at', { ascending: false });
     setExpenses(data || []);
   };
