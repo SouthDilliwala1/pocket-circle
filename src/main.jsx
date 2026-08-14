@@ -127,7 +127,10 @@ export default function App() {
 
   // ── Groups ─────────────────────────────────────────────────────
   const fetchGroups = async () => {
-    const { data } = await supabase.from('groups').select('*');
+    const { data } = await supabase
+      .from('groups')
+      .select('*, group_members!inner(user_id)')
+      .eq('group_members.user_id', session.user.id);
     if (data) setGroups(data);
   };
 
