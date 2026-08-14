@@ -140,13 +140,13 @@ export default function App() {
   };
 
   const fetchExpenses = async (groupId) => {
-    const timestamp = Date.now();
     const { data } = await supabase
-      .from('expenses')
-      .select('*, paid_by_profile:profiles!expenses_paid_by_fkey(display_name, avatar_url)')
-      .eq('group_id', groupId)
-      .order('spent_at', { ascending: false })
-      .limit(100);
+    .from('expenses')
+    .select('*, paid_by_profile:profiles!expenses_paid_by_fkey(display_name, avatar_url)')
+    .eq('group_id', groupId)
+    .eq('is_deleted', false)
+    .order('spent_at', { ascending: false })
+    .limit(100);
     setExpenses(data || []);
   };
 
@@ -219,7 +219,9 @@ export default function App() {
     setExpTitle(''); setExpAmount(''); setExpCategory('Groceries');
     setExpPayment('UPI'); setExpNote(''); setExpSplit('self');
     setExpPaidBy(session.user.id);
-    setExpDate(new Date().toISOString().slice(0, 16));
+    const now = new Date();
+    const localISO = new Date(now.getTime() - now.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+    setExpDate(localISO);
     setShowAddExpense(true);
   };
 
@@ -232,7 +234,9 @@ export default function App() {
     setExpNote(exp.notes || '');
     setExpSplit(exp.split_method || 'self');
     setExpPaidBy(exp.paid_by || session.user.id);
-    setExpDate(exp.spent_at ? exp.spent_at.slice(0, 16) : new Date().toISOString().slice(0, 16));
+    const now2 = new Date();
+    const localISO2 = new Date(now2.getTime() - now2.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+    setExpDate(exp.spent_at ? new Date(new Date(exp.spent_at).getTime() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 16) : localISO2);
     setShowAddExpense(true);
   };
 
@@ -248,7 +252,7 @@ export default function App() {
       category: expCategory,
       payment_method: expPayment,
       notes: expNote.trim() || null,
-      spent_at: expDate ? new Date(expDate).toISOString() : new Date().toISOString(),
+      spent_at: expDate ? new Date(expDate).toISOString() : new Date(new Date().getTime() - new Date().getTimezoneOffset() * 60000).toISOString(),
       split_method: expSplit,
       is_deleted: false,
     };
