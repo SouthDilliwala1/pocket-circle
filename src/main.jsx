@@ -16,12 +16,8 @@ function Avatar({ url, name, size = 36, style = {} }) {
   const colors = ['#2d6a4f','#1e6091','#7b2d8b','#c05621','#276749','#2c5282'];
   const color = colors[(name || '').charCodeAt(0) % colors.length];
   if (url && !imgError) return (
-    <img
-      src={url}
-      alt={name}
-      onError={() => setImgError(true)}
-      style={{ width: size, height: size, borderRadius: '50%', objectFit: 'cover', flexShrink: 0, ...style }}
-    />
+    <img src={url} alt={name} onError={() => setImgError(true)}
+      style={{ width: size, height: size, borderRadius: '50%', objectFit: 'cover', flexShrink: 0, ...style }} />
   );
   return (
     <div style={{ width: size, height: size, borderRadius: '50%', background: color, color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700, fontSize: size * 0.4, flexShrink: 0, ...style }}>
@@ -37,6 +33,26 @@ function Toast({ message, onDone }) {
       {message}
     </div>
   );
+}
+
+// ── Calculate split breakdown ─────────────────────────────────
+function calcSplits(splitType, amount, members, exactAmounts, percentAmounts) {
+  const amt = parseFloat(amount) || 0;
+  if (splitType === 'self') return [];
+  if (splitType === 'equal') {
+    const share = amt / members.length;
+    return members.map(m => ({ user_id: m.user_id, share: Math.round(share * 100) / 100 }));
+  }
+  if (splitType === 'exact') {
+    return members.map(m => ({ user_id: m.user_id, share: parseFloat(exactAmounts[m.user_id] || 0) }));
+  }
+  if (splitType === 'percentage') {
+    return members.map(m => {
+      const pct = parseFloat(percentAmounts[m.user_id] || 0);
+      return { user_id: m.user_id, share: Math.round((amt * pct / 100) * 100) / 100 };
+    });
+  }
+  return [];
 }
 
 export default function App() {
@@ -63,64 +79,50 @@ export default function App() {
   const [joinCode, setJoinCode]               = useState('');
 
   // Expense form state
-  const [expTitle, setExpTitle]       = useState('');
-  const [expAmount, setExpAmount]     = useState('');
-  const [expCategory, setExpCategory] = useState('Groceries');
-  const [expPayment, setExpPayment]   = useState('UPI');
-  const [expNote, setExpNote]         = useState('');
-  const [expDate, setExpDate]         = useState('');
-  const [expSplit, setExpSplit]       = useState('self'); // self | equal | exact | percentage
-  const [expPaidBy, setExpPaidBy]     = useState('');
-  const [submitting, setSubmitting]   = useState(false);
+  const [expTitle, setExpTitle]             = useState('');
+  const [expAmount, setExpAmount]           = useState('');
+  const [expCategory, setExpCategory]       = useState('Groceries');
+  const [expPayment, setExpPayment]         = useState('UPI');
+  const [expNote, setExpNote]               = useState('');
+  const [expDate, setExpDate]               = useState('');
+  const [expSplit, setExpSplit]             = useState('self');
+  const [expPaidBy, setExpPaidBy]           = useState('');
+  const [exactAmounts, setExactAmounts]     = useState({});
+  const [percentAmounts, setPercentAmounts] = useState({});
+  const [submitting, setSubmitting]         = useState(false);
 
   const joinCodeRef = useRef(null);
 
   // ── Auth ──────────────────────────────────────────────────────
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
-      setSession(session);
-      setLoading(false);
+      setSession(session); setLoading(false);
     });
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_e, s) => setSession(s));
     return () => subscription.unsubscribe();
   }, []);
 
   useEffect(() => {
-    if (session) {
-      ensureProfile(session.user);
-      fetchGroups();
-      fetchNotifications();
-    }
+    if (session) { ensureProfile(session.user); fetchGroups(); fetchNotifications(); }
   }, [session]);
 
   useEffect(() => {
-    if (selectedGroup) {
-      fetchMembers(selectedGroup.id);
-      fetchExpenses(selectedGroup.id);
-    }
+    if (selectedGroup) { fetchMembers(selectedGroup.id); fetchExpenses(selectedGroup.id); }
   }, [selectedGroup]);
 
-  // ── Profile — always sync Google photo ────────────────────────
+  // ── Profile ────────────────────────────────────────────────────
   const ensureProfile = async (user) => {
     const meta = user.user_metadata || {};
-    // Try every possible field Google might send
-    const avatarUrl = meta.avatar_url || meta.picture || meta.photo_url || meta.photo || null;
+    const avatarUrl = meta.avatar_url || meta.picture || meta.photo_url || null;
     const displayName = meta.full_name || meta.name || user.email;
-
-    const { data, error } = await supabase
-      .from('profiles').select('*').eq('id', user.id).single();
-
+    const { data, error } = await supabase.from('profiles').select('*').eq('id', user.id).single();
     if (error || !data) {
-      // Insert new profile
       const { data: newP } = await supabase.from('profiles')
-        .insert([{ id: user.id, display_name: displayName, avatar_url: avatarUrl }])
-        .select().single();
+        .insert([{ id: user.id, display_name: displayName, avatar_url: avatarUrl }]).select().single();
       setProfile(newP || { id: user.id, display_name: displayName, avatar_url: avatarUrl });
     } else {
-      // Always update avatar from Google in case it changed
       const { data: updated } = await supabase.from('profiles')
-        .update({ avatar_url: avatarUrl, display_name: displayName })
-        .eq('id', user.id).select().single();
+        .update({ avatar_url: avatarUrl, display_name: displayName }).eq('id', user.id).select().single();
       setProfile(updated || data);
     }
   };
@@ -144,21 +146,19 @@ export default function App() {
 
   const fetchExpenses = async (groupId) => {
     const { data } = await supabase
-    .from('expenses')
-    .select('*, paid_by_profile:profiles!expenses_paid_by_fkey(display_name, avatar_url)')
-    .eq('group_id', groupId)
-    .eq('is_deleted', false)
-    .order('spent_at', { ascending: false })
-    .limit(100);
+      .from('expenses')
+      .select('*, paid_by_profile:profiles!expenses_paid_by_fkey(display_name, avatar_url)')
+      .eq('group_id', groupId)
+      .eq('is_deleted', false)
+      .order('spent_at', { ascending: false })
+      .limit(100);
     setExpenses(data || []);
   };
 
   const fetchNotifications = async () => {
     if (!session) return;
-    const { data } = await supabase
-      .from('notifications').select('*')
-      .eq('user_id', session.user.id)
-      .order('created_at', { ascending: false }).limit(20);
+    const { data } = await supabase.from('notifications').select('*')
+      .eq('user_id', session.user.id).order('created_at', { ascending: false }).limit(20);
     if (data) { setNotifications(data); setUnreadCount(data.filter(n => !n.read).length); }
   };
 
@@ -169,7 +169,7 @@ export default function App() {
     setNotifications(prev => prev.map(n => ({ ...n, read: true })));
   };
 
-  // ── Create Group ───────────────────────────────────────────────
+  // ── Create Group ────────────────────────────────────────────────
   const createGroup = async () => {
     if (!newGroupName.trim() || submitting) return;
     setSubmitting(true);
@@ -183,8 +183,7 @@ export default function App() {
       .insert([{ name: newGroupName.trim(), group_type: newGroupType, owner_id: session.user.id, invite_code: code }])
       .select().single();
     if (error) { showToast('Error: ' + error.message); setSubmitting(false); return; }
-    await supabase.from('group_members')
-      .insert([{ group_id: data.id, user_id: session.user.id, role: 'owner' }]);
+    await supabase.from('group_members').insert([{ group_id: data.id, user_id: session.user.id, role: 'owner' }]);
     setNewGroupName(''); setNewGroupType('Household');
     setShowCreateModal(false); setSubmitting(false);
     await fetchGroups();
@@ -192,7 +191,7 @@ export default function App() {
     showToast('Group created! 🎉');
   };
 
-  // ── Join Group ─────────────────────────────────────────────────
+  // ── Join Group ──────────────────────────────────────────────────
   const joinGroup = async () => {
     const code = joinCode.trim();
     if (code.length !== 6 || submitting) return;
@@ -205,26 +204,28 @@ export default function App() {
     const { count } = await supabase.from('group_members')
       .select('*', { count: 'exact', head: true }).eq('group_id', group.id);
     if (count >= 11) { showToast('Group is full!'); setSubmitting(false); return; }
-    await supabase.from('group_members')
-      .insert([{ group_id: group.id, user_id: session.user.id, role: 'member' }]);
+    await supabase.from('group_members').insert([{ group_id: group.id, user_id: session.user.id, role: 'member' }]);
     const memberName = profile?.display_name || session.user.email;
-    await supabase.from('notifications')
-      .insert([{ user_id: group.owner_id, message: `${memberName} joined your group "${group.name}"` }]);
+    await supabase.from('notifications').insert([{ user_id: group.owner_id, message: `${memberName} joined your group "${group.name}"` }]);
     setJoinCode(''); setShowJoinModal(false); setSubmitting(false);
     await fetchGroups();
     setSelectedGroup(group); setScreen('group');
     showToast(`Joined ${group.name}! 🎉`);
   };
 
-  // ── Expenses ───────────────────────────────────────────────────
+  // ── Expenses ────────────────────────────────────────────────────
+  const getLocalISO = () => {
+    const now = new Date();
+    return new Date(now.getTime() - now.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+  };
+
   const openAddExpense = () => {
     setEditingExpense(null);
     setExpTitle(''); setExpAmount(''); setExpCategory('Groceries');
     setExpPayment('UPI'); setExpNote(''); setExpSplit('self');
     setExpPaidBy(session.user.id);
-    const now = new Date();
-    const localISO = new Date(now.getTime() - now.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
-    setExpDate(localISO);
+    setExactAmounts({}); setPercentAmounts({});
+    setExpDate(getLocalISO());
     setShowAddExpense(true);
   };
 
@@ -237,37 +238,62 @@ export default function App() {
     setExpNote(exp.notes || '');
     setExpSplit(exp.split_method || 'self');
     setExpPaidBy(exp.paid_by || session.user.id);
-    const now2 = new Date();
-    const localISO2 = new Date(now2.getTime() - now2.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
-    setExpDate(exp.spent_at ? new Date(new Date(exp.spent_at).getTime() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 16) : localISO2);
+    setExactAmounts({}); setPercentAmounts({});
+    const now = new Date();
+    const localFallback = new Date(now.getTime() - now.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+    setExpDate(exp.spent_at ? new Date(new Date(exp.spent_at).getTime() - now.getTimezoneOffset() * 60000).toISOString().slice(0, 16) : localFallback);
     setShowAddExpense(true);
   };
 
   const saveExpense = async () => {
     if (!expTitle.trim() || !expAmount || submitting) return;
+
+    // Validate splits
+    const amt = parseFloat(expAmount);
+    if (expSplit === 'exact') {
+      const total = groupMembers.reduce((s, m) => s + parseFloat(exactAmounts[m.user_id] || 0), 0);
+      if (Math.abs(total - amt) > 0.5) { showToast(`Exact amounts must add up to ₹${amt}`); return; }
+    }
+    if (expSplit === 'percentage') {
+      const total = groupMembers.reduce((s, m) => s + parseFloat(percentAmounts[m.user_id] || 0), 0);
+      if (Math.abs(total - 100) > 1) { showToast('Percentages must add up to 100%'); return; }
+    }
+
     setSubmitting(true);
     const payload = {
       group_id: selectedGroup.id,
       paid_by: expPaidBy || session.user.id,
       created_by: session.user.id,
       description: expTitle.trim(),
-      amount: parseFloat(expAmount),
+      amount: amt,
       category: expCategory,
       payment_method: expPayment,
       notes: expNote.trim() || null,
-      spent_at: expDate ? new Date(expDate).toISOString() : new Date(new Date().getTime() - new Date().getTimezoneOffset() * 60000).toISOString(),
+      spent_at: expDate ? new Date(expDate).toISOString() : new Date().toISOString(),
       split_method: expSplit,
       is_deleted: false,
     };
+
+    let expenseId = editingExpense?.id;
     if (editingExpense) {
       const { error } = await supabase.from('expenses').update(payload).eq('id', editingExpense.id);
       if (error) { showToast('Error: ' + error.message); setSubmitting(false); return; }
+      // Delete old splits
+      await supabase.from('expense_splits').delete().eq('expense_id', editingExpense.id);
       showToast('Expense updated ✓');
     } else {
-      const { error } = await supabase.from('expenses').insert([payload]);
+      const { data, error } = await supabase.from('expenses').insert([payload]).select().single();
       if (error) { showToast('Error: ' + error.message); setSubmitting(false); return; }
+      expenseId = data.id;
       showToast('Expense added ✓');
     }
+
+    // Save splits
+    const splits = calcSplits(expSplit, amt, groupMembers, exactAmounts, percentAmounts);
+    if (splits.length > 0) {
+      await supabase.from('expense_splits').insert(splits.map(s => ({ expense_id: expenseId, user_id: s.user_id, share_value: s.share })));
+    }
+
     setShowAddExpense(false); setSubmitting(false);
     setExpenses([]);
     await fetchExpenses(selectedGroup.id);
@@ -281,7 +307,7 @@ export default function App() {
     await fetchExpenses(selectedGroup.id);
   };
 
-  // ── Refresh invite code ────────────────────────────────────────
+  // ── Refresh invite code ─────────────────────────────────────────
   const refreshCode = async () => {
     if (!confirm('Generate a new code? The old one will stop working.')) return;
     let code = generateCode();
@@ -298,24 +324,19 @@ export default function App() {
     showToast('New code generated ✓');
   };
 
-  const copyCode = () => {
-    navigator.clipboard.writeText(selectedGroup?.invite_code || '');
-    showToast('Code copied!');
-  };
+  const copyCode = () => { navigator.clipboard.writeText(selectedGroup?.invite_code || ''); showToast('Code copied!'); };
 
-  // ── Leave / Remove / Delete ────────────────────────────────────
+  // ── Leave / Remove / Delete ─────────────────────────────────────
   const leaveGroup = async () => {
     if (!confirm(`Leave "${selectedGroup.name}"?`)) return;
-    await supabase.from('group_members').delete()
-      .eq('group_id', selectedGroup.id).eq('user_id', session.user.id);
+    await supabase.from('group_members').delete().eq('group_id', selectedGroup.id).eq('user_id', session.user.id);
     setSelectedGroup(null); setScreen('home'); fetchGroups();
     showToast('You left the group');
   };
 
   const removeMember = async (userId) => {
     if (!confirm('Remove this member?')) return;
-    await supabase.from('group_members').delete()
-      .eq('group_id', selectedGroup.id).eq('user_id', userId);
+    await supabase.from('group_members').delete().eq('group_id', selectedGroup.id).eq('user_id', userId);
     fetchMembers(selectedGroup.id);
     showToast('Member removed');
   };
@@ -336,7 +357,29 @@ export default function App() {
   const totalExpenses = expenses.reduce((s, e) => s + Number(e.amount || 0), 0);
   const handleLogout = async () => { await supabase.auth.signOut(); setGroups([]); setSelectedGroup(null); setScreen('home'); };
 
-  // ── Loading ────────────────────────────────────────────────────
+  // ── Split breakdown preview ─────────────────────────────────────
+  const splitBreakdown = expSplit !== 'self' && expAmount
+    ? calcSplits(expSplit, expAmount, groupMembers, exactAmounts, percentAmounts)
+    : [];
+
+  const getMemberName = (userId) => {
+    const m = groupMembers.find(m => m.user_id === userId);
+    if (!m) return 'Member';
+    if (userId === session?.user?.id) return 'You';
+    return m.profiles?.display_name?.split(' ')[0] || 'Member';
+  };
+
+  const getMemberProfile = (userId) => {
+    const m = groupMembers.find(m => m.user_id === userId);
+    return m?.profiles || {};
+  };
+
+  // ── Exact split total validation ────────────────────────────────
+  const exactTotal = groupMembers.reduce((s, m) => s + parseFloat(exactAmounts[m.user_id] || 0), 0);
+  const percentTotal = groupMembers.reduce((s, m) => s + parseFloat(percentAmounts[m.user_id] || 0), 0);
+  const amt = parseFloat(expAmount) || 0;
+
+  // ── Loading ─────────────────────────────────────────────────────
   if (loading) return (
     <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#f4f7f4', fontFamily: 'system-ui,sans-serif' }}>
       <div style={{ textAlign: 'center' }}>
@@ -346,7 +389,7 @@ export default function App() {
     </div>
   );
 
-  // ── Sign In ────────────────────────────────────────────────────
+  // ── Sign In ─────────────────────────────────────────────────────
   if (!session) return (
     <div style={{ minHeight: '100vh', background: 'linear-gradient(160deg,#eaf4ee,#f4f7f4)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: 'system-ui,sans-serif', padding: 20 }}>
       <div style={{ background: '#fff', borderRadius: 24, padding: '40px 32px', maxWidth: 360, width: '100%', textAlign: 'center', boxShadow: '0 8px 40px rgba(0,0,0,0.10)' }}>
@@ -573,7 +616,7 @@ export default function App() {
                   <div style={{ fontSize: 12, color: '#888', marginTop: 2 }}>
                     {paidBy.display_name || 'Member'} · {exp.category} · {exp.payment_method}
                   </div>
-                  <div style={{ display: 'flex', gap: 6, marginTop: 4, flexWrap: 'wrap' }}>
+                  <div style={{ display: 'flex', gap: 6, marginTop: 4 }}>
                     <span style={S.tag}>{splitLabel[exp.split_method] || 'Paid by self'}</span>
                   </div>
                   {exp.notes && <div style={{ fontSize: 12, color: '#666', marginTop: 3, fontStyle: 'italic' }}>"{exp.notes}"</div>}
@@ -607,7 +650,7 @@ export default function App() {
               placeholder="What was this for?" style={S.input} />
 
             <label style={S.label}>Amount (₹) *</label>
-            <input type="text" pattern="[0-9]*" value={expAmount} 
+            <input type="text" pattern="[0-9]*" value={expAmount}
               onChange={e => setExpAmount(e.target.value.replace(/[^0-9.]/g, ''))}
               placeholder="0" inputMode="decimal" style={S.input} />
 
@@ -640,6 +683,81 @@ export default function App() {
                 </button>
               ))}
             </div>
+
+            {/* Split Breakdown */}
+            {expSplit !== 'self' && expAmount && (
+              <div style={{ background: '#f4f7f4', borderRadius: 12, padding: 14, marginTop: 8 }}>
+                <div style={{ fontWeight: 700, fontSize: 13, color: '#22533e', marginBottom: 10 }}>
+                  {expSplit === 'equal' && '⚖️ Equal split breakdown'}
+                  {expSplit === 'exact' && '🔢 Enter exact amount for each person'}
+                  {expSplit === 'percentage' && '% Enter percentage for each person'}
+                </div>
+                {groupMembers.map(m => {
+                  const p = getMemberProfile(m.user_id);
+                  const name = getMemberName(m.user_id);
+                  if (expSplit === 'equal') {
+                    const share = amt / groupMembers.length;
+                    return (
+                      <div key={m.user_id} style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+                        <Avatar url={p.avatar_url} name={p.display_name || '?'} size={28} />
+                        <div style={{ flex: 1, fontSize: 14, fontWeight: 600 }}>{name}</div>
+                        <div style={{ fontWeight: 800, color: '#22533e', fontSize: 15 }}>₹{share.toFixed(2)}</div>
+                      </div>
+                    );
+                  }
+                  if (expSplit === 'exact') {
+                    return (
+                      <div key={m.user_id} style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+                        <Avatar url={p.avatar_url} name={p.display_name || '?'} size={28} />
+                        <div style={{ flex: 1, fontSize: 14, fontWeight: 600 }}>{name}</div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                          <span style={{ color: '#666', fontSize: 13 }}>₹</span>
+                          <input type="text" inputMode="decimal"
+                            value={exactAmounts[m.user_id] || ''}
+                            onChange={e => setExactAmounts(prev => ({ ...prev, [m.user_id]: e.target.value.replace(/[^0-9.]/g,'') }))}
+                            placeholder="0"
+                            style={{ width: 80, padding: '6px 8px', borderRadius: 8, border: '1.5px solid #ddd', fontSize: 14, fontWeight: 700, textAlign: 'right' }} />
+                        </div>
+                      </div>
+                    );
+                  }
+                  if (expSplit === 'percentage') {
+                    const pct = parseFloat(percentAmounts[m.user_id] || 0);
+                    const share = (amt * pct / 100);
+                    return (
+                      <div key={m.user_id} style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+                        <Avatar url={p.avatar_url} name={p.display_name || '?'} size={28} />
+                        <div style={{ flex: 1, fontSize: 14, fontWeight: 600 }}>{name}</div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                          <input type="text" inputMode="decimal"
+                            value={percentAmounts[m.user_id] || ''}
+                            onChange={e => setPercentAmounts(prev => ({ ...prev, [m.user_id]: e.target.value.replace(/[^0-9.]/g,'') }))}
+                            placeholder="0"
+                            style={{ width: 60, padding: '6px 8px', borderRadius: 8, border: '1.5px solid #ddd', fontSize: 14, fontWeight: 700, textAlign: 'right' }} />
+                          <span style={{ color: '#666', fontSize: 13 }}>%</span>
+                          {pct > 0 && <span style={{ color: '#22533e', fontSize: 13, fontWeight: 700 }}>₹{share.toFixed(0)}</span>}
+                        </div>
+                      </div>
+                    );
+                  }
+                  return null;
+                })}
+
+                {/* Validation */}
+                {expSplit === 'exact' && (
+                  <div style={{ marginTop: 8, fontSize: 12, fontWeight: 700, color: Math.abs(exactTotal - amt) < 0.5 ? '#22533e' : '#e53e3e' }}>
+                    Total: ₹{exactTotal.toFixed(2)} / ₹{amt.toFixed(2)}
+                    {Math.abs(exactTotal - amt) < 0.5 ? ' ✓' : ` (₹${(amt - exactTotal).toFixed(2)} remaining)`}
+                  </div>
+                )}
+                {expSplit === 'percentage' && (
+                  <div style={{ marginTop: 8, fontSize: 12, fontWeight: 700, color: Math.abs(percentTotal - 100) < 1 ? '#22533e' : '#e53e3e' }}>
+                    Total: {percentTotal.toFixed(0)}% / 100%
+                    {Math.abs(percentTotal - 100) < 1 ? ' ✓' : ` (${(100 - percentTotal).toFixed(0)}% remaining)`}
+                  </div>
+                )}
+              </div>
+            )}
 
             <label style={S.label}>Category</label>
             <div style={S.chipRow}>
