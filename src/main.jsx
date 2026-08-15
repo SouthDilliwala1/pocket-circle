@@ -55,6 +55,83 @@ function calcSplits(splitType, amount, members, exactAmounts, percentAmounts) {
   return [];
 }
 
+// ── Calculate who owes whom ───────────────────────────────────
+function calcSettlements(expenses, members) {
+  // Build balance map: positive = owed money, negative = owes money
+  const balance = {};
+  members.forEach(m => { balance[m.user_id] = 0; });
+
+  expenses.forEach(exp => {
+    const amt = parseFloat(exp.amount) || 0;
+    const paidBy = exp.paid_by;
+    const splitMethod = exp.split_method;
+
+    if (splitMethod === 'self') {
+      // No split needed
+      return;
+    }
+
+    if (splitMethod === 'equal') {
+      const share = amt / members.length;
+      members.forEach(m => {
+        if (m.user_id === paidBy) {
+          balance[m.user_id] += amt - share; // paid full, gets back others' shares
+        } else {
+          balance[m.user_id] -= share; // owes their share
+        }
+      });
+    }
+
+    if (splitMethod === 'exact' || splitMethod === 'percentage') {
+      // Use splits from expense_splits table if available
+      if (exp.splits && exp.splits.length > 0) {
+        exp.splits.forEach(s => {
+          if (s.user_id === paidBy) {
+            balance[paidBy] += amt - s.share_value;
+          } else {
+            balance[s.user_id] -= s.share_value;
+          }
+        });
+      } else {
+        // Fallback to equal if no splits recorded
+        const share = amt / members.length;
+        members.forEach(m => {
+          if (m.user_id === paidBy) {
+            balance[m.user_id] += amt - share;
+          } else {
+            balance[m.user_id] -= share;
+          }
+        });
+      }
+    }
+  });
+
+  // Convert balances to settlements
+  const settlements = [];
+  const creditors = members.filter(m => balance[m.user_id] > 0.5)
+    .map(m => ({ user_id: m.user_id, amount: balance[m.user_id] }))
+    .sort((a, b) => b.amount - a.amount);
+  const debtors = members.filter(m => balance[m.user_id] < -0.5)
+    .map(m => ({ user_id: m.user_id, amount: -balance[m.user_id] }))
+    .sort((a, b) => b.amount - a.amount);
+
+  let i = 0, j = 0;
+  while (i < creditors.length && j < debtors.length) {
+    const credit = creditors[i];
+    const debt = debtors[j];
+    const amount = Math.min(credit.amount, debt.amount);
+    if (amount > 0.5) {
+      settlements.push({ from: debt.user_id, to: credit.user_id, amount: Math.round(amount) });
+    }
+    credit.amount -= amount;
+    debt.amount -= amount;
+    if (credit.amount < 0.5) i++;
+    if (debt.amount < 0.5) j++;
+  }
+
+  return settlements;
+}
+
 export default function App() {
   const [session, setSession]                 = useState(null);
   const [loading, setLoading]                 = useState(true);
@@ -77,6 +154,7 @@ export default function App() {
   const [newGroupName, setNewGroupName]       = useState('');
   const [newGroupType, setNewGroupType]       = useState('Household');
   const [joinCode, setJoinCode]               = useState('');
+  const [settledPairs, setSettledPairs]       = useState([]);
 
   // Expense form state
   const [expTitle, setExpTitle]             = useState('');
@@ -147,7 +225,7 @@ export default function App() {
   const fetchExpenses = async (groupId) => {
     const { data } = await supabase
       .from('expenses')
-      .select('*, paid_by_profile:profiles!expenses_paid_by_fkey(display_name, avatar_url)')
+      .select('*, paid_by_profile:profiles!expenses_paid_by_fkey(display_name, avatar_url), splits:expense_splits(user_id, share_value)')
       .eq('group_id', groupId)
       .eq('is_deleted', false)
       .order('spent_at', { ascending: false })
@@ -247,8 +325,6 @@ export default function App() {
 
   const saveExpense = async () => {
     if (!expTitle.trim() || !expAmount || submitting) return;
-
-    // Validate splits
     const amt = parseFloat(expAmount);
     if (expSplit === 'exact') {
       const total = groupMembers.reduce((s, m) => s + parseFloat(exactAmounts[m.user_id] || 0), 0);
@@ -258,7 +334,6 @@ export default function App() {
       const total = groupMembers.reduce((s, m) => s + parseFloat(percentAmounts[m.user_id] || 0), 0);
       if (Math.abs(total - 100) > 1) { showToast('Percentages must add up to 100%'); return; }
     }
-
     setSubmitting(true);
     const payload = {
       group_id: selectedGroup.id,
@@ -273,12 +348,10 @@ export default function App() {
       split_method: expSplit,
       is_deleted: false,
     };
-
     let expenseId = editingExpense?.id;
     if (editingExpense) {
       const { error } = await supabase.from('expenses').update(payload).eq('id', editingExpense.id);
       if (error) { showToast('Error: ' + error.message); setSubmitting(false); return; }
-      // Delete old splits
       await supabase.from('expense_splits').delete().eq('expense_id', editingExpense.id);
       showToast('Expense updated ✓');
     } else {
@@ -287,13 +360,10 @@ export default function App() {
       expenseId = data.id;
       showToast('Expense added ✓');
     }
-
-    // Save splits
     const splits = calcSplits(expSplit, amt, groupMembers, exactAmounts, percentAmounts);
-    if (splits.length > 0) {
+    if (splits.length > 0 && expenseId) {
       await supabase.from('expense_splits').insert(splits.map(s => ({ expense_id: expenseId, user_id: s.user_id, share_value: s.share })));
     }
-
     setShowAddExpense(false); setSubmitting(false);
     setExpenses([]);
     await fetchExpenses(selectedGroup.id);
@@ -305,6 +375,29 @@ export default function App() {
     showToast('Expense removed');
     setExpenses([]);
     await fetchExpenses(selectedGroup.id);
+  };
+
+  // ── Settlements ─────────────────────────────────────────────────
+  const settlements = calcSettlements(expenses, groupMembers);
+  const activeSettlements = settlements.filter(s => {
+    const key = `${s.from}-${s.to}`;
+    return !settledPairs.includes(key);
+  });
+
+  const markSettled = async (settlement) => {
+    const key = `${settlement.from}-${settlement.to}`;
+    const fromName = getMemberName(settlement.from);
+    const toName = getMemberName(settlement.to);
+
+    setSettledPairs(prev => [...prev, key]);
+
+    // Notify both parties
+    await supabase.from('notifications').insert([
+      { user_id: settlement.from, message: `✅ Your settlement of ₹${settlement.amount} to ${toName} has been recorded` },
+      { user_id: settlement.to, message: `✅ ${fromName} has settled ₹${settlement.amount} with you` },
+    ]);
+
+    showToast(`Settlement of ₹${settlement.amount} recorded ✓`);
   };
 
   // ── Refresh invite code ─────────────────────────────────────────
@@ -352,15 +445,11 @@ export default function App() {
     showToast('Group deleted');
   };
 
+  // ── Helpers ─────────────────────────────────────────────────────
   const showToast = (msg) => setToast(msg);
   const isAdmin = selectedGroup && session && selectedGroup.owner_id === session.user.id;
   const totalExpenses = expenses.reduce((s, e) => s + Number(e.amount || 0), 0);
   const handleLogout = async () => { await supabase.auth.signOut(); setGroups([]); setSelectedGroup(null); setScreen('home'); };
-
-  // ── Split breakdown preview ─────────────────────────────────────
-  const splitBreakdown = expSplit !== 'self' && expAmount
-    ? calcSplits(expSplit, expAmount, groupMembers, exactAmounts, percentAmounts)
-    : [];
 
   const getMemberName = (userId) => {
     const m = groupMembers.find(m => m.user_id === userId);
@@ -374,10 +463,9 @@ export default function App() {
     return m?.profiles || {};
   };
 
-  // ── Exact split total validation ────────────────────────────────
+  const amt = parseFloat(expAmount) || 0;
   const exactTotal = groupMembers.reduce((s, m) => s + parseFloat(exactAmounts[m.user_id] || 0), 0);
   const percentTotal = groupMembers.reduce((s, m) => s + parseFloat(percentAmounts[m.user_id] || 0), 0);
-  const amt = parseFloat(expAmount) || 0;
 
   // ── Loading ─────────────────────────────────────────────────────
   if (loading) return (
@@ -436,7 +524,7 @@ export default function App() {
             <div style={{ color: '#888', fontSize: 14 }}>Tap + to create or join a group</div>
           </div>
         ) : groups.map(g => (
-          <div key={g.id} onClick={() => { setSelectedGroup(g); setScreen('group'); }} style={S.groupCard}>
+          <div key={g.id} onClick={() => { setSelectedGroup(g); setScreen('group'); setSettledPairs([]); }} style={S.groupCard}>
             <div style={{ ...S.groupIconBox, background: g.group_type === 'Trip' ? '#fff3e0' : '#e8f5e9' }}>
               {g.group_type === 'Trip' ? '🌴' : '🏠'}
             </div>
@@ -549,6 +637,48 @@ export default function App() {
           )}
         </div>
 
+        {/* Settlements */}
+        {activeSettlements.length > 0 && (
+          <div style={{ ...S.section, border: '1.5px solid #fde68a', background: '#fffbeb' }}>
+            <div style={{ fontWeight: 700, fontSize: 15, color: '#92400e', marginBottom: 12 }}>💰 Who owes whom</div>
+            {activeSettlements.map((s, i) => {
+              const fromP = getMemberProfile(s.from);
+              const toP = getMemberProfile(s.to);
+              const fromName = getMemberName(s.from);
+              const toName = getMemberName(s.to);
+              const isMyDebt = s.from === session.user.id;
+              const isMyCredit = s.to === session.user.id;
+              return (
+                <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 0', borderBottom: i < activeSettlements.length - 1 ? '1px solid #fde68a' : 'none' }}>
+                  <Avatar url={fromP.avatar_url} name={fromP.display_name || '?'} size={34} />
+                  <div style={{ flex: 1 }}>
+                    <div style={{ fontSize: 14, fontWeight: 600, color: '#1a1a1a' }}>
+                      <span style={{ color: isMyDebt ? '#e53e3e' : '#1a1a1a' }}>{fromName}</span>
+                      {' owes '}
+                      <span style={{ color: isMyCredit ? '#22533e' : '#1a1a1a' }}>{toName}</span>
+                    </div>
+                    <div style={{ fontSize: 16, fontWeight: 800, color: '#92400e', marginTop: 2 }}>₹{s.amount.toLocaleString('en-IN')}</div>
+                  </div>
+                  <Avatar url={toP.avatar_url} name={toP.display_name || '?'} size={34} />
+                  <button onClick={() => markSettled(s)}
+                    style={{ background: '#22533e', color: '#fff', border: 'none', borderRadius: 8, padding: '6px 12px', fontSize: 12, fontWeight: 700, cursor: 'pointer', marginLeft: 4 }}>
+                    ✓ Settled
+                  </button>
+                </div>
+              );
+            })}
+          </div>
+        )}
+
+        {/* All settled message */}
+        {settlements.length > 0 && activeSettlements.length === 0 && (
+          <div style={{ ...S.section, background: '#f0fdf4', border: '1.5px solid #bbf7d0', textAlign: 'center', padding: '20px' }}>
+            <div style={{ fontSize: 28, marginBottom: 6 }}>🎉</div>
+            <div style={{ fontWeight: 700, color: '#22533e', fontSize: 15 }}>All settled up!</div>
+            <div style={{ color: '#666', fontSize: 13, marginTop: 4 }}>Everyone is even</div>
+          </div>
+        )}
+
         {/* Members */}
         <div style={S.section}>
           <div style={{ ...S.sectionTitle, marginBottom: 12 }}>Members ({groupMembers.length})</div>
@@ -607,7 +737,7 @@ export default function App() {
           ) : expenses.map(exp => {
             const paidBy = exp.paid_by_profile || {};
             const isMyExp = exp.created_by === session.user.id;
-            const splitLabel = { self: 'Paid by self', equal: 'Split equally', exact: 'Exact split', percentage: '% split' };
+            const splitLabel = { self: '👤 Self', equal: '⚖️ Equal', exact: '🔢 Exact', percentage: '% Split' };
             return (
               <div key={exp.id} style={S.expenseRow}>
                 <Avatar url={paidBy.avatar_url} name={paidBy.display_name || '?'} size={40} />
@@ -617,7 +747,7 @@ export default function App() {
                     {paidBy.display_name || 'Member'} · {exp.category} · {exp.payment_method}
                   </div>
                   <div style={{ display: 'flex', gap: 6, marginTop: 4 }}>
-                    <span style={S.tag}>{splitLabel[exp.split_method] || 'Paid by self'}</span>
+                    <span style={S.tag}>{splitLabel[exp.split_method] || '👤 Self'}</span>
                   </div>
                   {exp.notes && <div style={{ fontSize: 12, color: '#666', marginTop: 3, fontStyle: 'italic' }}>"{exp.notes}"</div>}
                   <div style={{ fontSize: 11, color: '#bbb', marginTop: 3 }}>
@@ -652,7 +782,7 @@ export default function App() {
             <label style={S.label}>Amount (₹) *</label>
             <input type="text" pattern="[0-9]*" value={expAmount}
               onChange={e => setExpAmount(e.target.value.replace(/[^0-9.]/g, ''))}
-              placeholder="0" inputMode="decimal" style={S.input} />
+              placeholder="0" inputMode="decimal" style={{ ...S.input, fontSize: 22, fontWeight: 800 }} />
 
             <label style={S.label}>Paid By</label>
             <div style={S.chipRow}>
@@ -688,9 +818,9 @@ export default function App() {
             {expSplit !== 'self' && expAmount && (
               <div style={{ background: '#f4f7f4', borderRadius: 12, padding: 14, marginTop: 8 }}>
                 <div style={{ fontWeight: 700, fontSize: 13, color: '#22533e', marginBottom: 10 }}>
-                  {expSplit === 'equal' && '⚖️ Equal split breakdown'}
-                  {expSplit === 'exact' && '🔢 Enter exact amount for each person'}
-                  {expSplit === 'percentage' && '% Enter percentage for each person'}
+                  {expSplit === 'equal' && '⚖️ Each person pays'}
+                  {expSplit === 'exact' && '🔢 Enter exact amount for each'}
+                  {expSplit === 'percentage' && '% Enter percentage for each'}
                 </div>
                 {groupMembers.map(m => {
                   const p = getMemberProfile(m.user_id);
@@ -701,7 +831,7 @@ export default function App() {
                       <div key={m.user_id} style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
                         <Avatar url={p.avatar_url} name={p.display_name || '?'} size={28} />
                         <div style={{ flex: 1, fontSize: 14, fontWeight: 600 }}>{name}</div>
-                        <div style={{ fontWeight: 800, color: '#22533e', fontSize: 15 }}>₹{share.toFixed(2)}</div>
+                        <div style={{ fontWeight: 800, color: '#22533e', fontSize: 16 }}>₹{share.toFixed(2)}</div>
                       </div>
                     );
                   }
@@ -711,12 +841,12 @@ export default function App() {
                         <Avatar url={p.avatar_url} name={p.display_name || '?'} size={28} />
                         <div style={{ flex: 1, fontSize: 14, fontWeight: 600 }}>{name}</div>
                         <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                          <span style={{ color: '#666', fontSize: 13 }}>₹</span>
+                          <span style={{ color: '#666', fontSize: 14 }}>₹</span>
                           <input type="text" inputMode="decimal"
                             value={exactAmounts[m.user_id] || ''}
                             onChange={e => setExactAmounts(prev => ({ ...prev, [m.user_id]: e.target.value.replace(/[^0-9.]/g,'') }))}
                             placeholder="0"
-                            style={{ width: 80, padding: '6px 8px', borderRadius: 8, border: '1.5px solid #ddd', fontSize: 14, fontWeight: 700, textAlign: 'right' }} />
+                            style={{ width: 80, padding: '6px 8px', borderRadius: 8, border: '1.5px solid #ddd', fontSize: 15, fontWeight: 700, textAlign: 'right' }} />
                         </div>
                       </div>
                     );
@@ -733,27 +863,25 @@ export default function App() {
                             value={percentAmounts[m.user_id] || ''}
                             onChange={e => setPercentAmounts(prev => ({ ...prev, [m.user_id]: e.target.value.replace(/[^0-9.]/g,'') }))}
                             placeholder="0"
-                            style={{ width: 60, padding: '6px 8px', borderRadius: 8, border: '1.5px solid #ddd', fontSize: 14, fontWeight: 700, textAlign: 'right' }} />
+                            style={{ width: 55, padding: '6px 8px', borderRadius: 8, border: '1.5px solid #ddd', fontSize: 15, fontWeight: 700, textAlign: 'right' }} />
                           <span style={{ color: '#666', fontSize: 13 }}>%</span>
-                          {pct > 0 && <span style={{ color: '#22533e', fontSize: 13, fontWeight: 700 }}>₹{share.toFixed(0)}</span>}
+                          {pct > 0 && <span style={{ color: '#22533e', fontSize: 14, fontWeight: 700 }}>₹{share.toFixed(0)}</span>}
                         </div>
                       </div>
                     );
                   }
                   return null;
                 })}
-
-                {/* Validation */}
                 {expSplit === 'exact' && (
-                  <div style={{ marginTop: 8, fontSize: 12, fontWeight: 700, color: Math.abs(exactTotal - amt) < 0.5 ? '#22533e' : '#e53e3e' }}>
+                  <div style={{ marginTop: 8, fontSize: 13, fontWeight: 700, color: Math.abs(exactTotal - amt) < 0.5 ? '#22533e' : '#e53e3e', background: Math.abs(exactTotal - amt) < 0.5 ? '#e8f5e9' : '#fff5f5', padding: '6px 10px', borderRadius: 8 }}>
                     Total: ₹{exactTotal.toFixed(2)} / ₹{amt.toFixed(2)}
-                    {Math.abs(exactTotal - amt) < 0.5 ? ' ✓' : ` (₹${(amt - exactTotal).toFixed(2)} remaining)`}
+                    {Math.abs(exactTotal - amt) < 0.5 ? ' ✓' : ` — ₹${(amt - exactTotal).toFixed(2)} left`}
                   </div>
                 )}
                 {expSplit === 'percentage' && (
-                  <div style={{ marginTop: 8, fontSize: 12, fontWeight: 700, color: Math.abs(percentTotal - 100) < 1 ? '#22533e' : '#e53e3e' }}>
+                  <div style={{ marginTop: 8, fontSize: 13, fontWeight: 700, color: Math.abs(percentTotal - 100) < 1 ? '#22533e' : '#e53e3e', background: Math.abs(percentTotal - 100) < 1 ? '#e8f5e9' : '#fff5f5', padding: '6px 10px', borderRadius: 8 }}>
                     Total: {percentTotal.toFixed(0)}% / 100%
-                    {Math.abs(percentTotal - 100) < 1 ? ' ✓' : ` (${(100 - percentTotal).toFixed(0)}% remaining)`}
+                    {Math.abs(percentTotal - 100) < 1 ? ' ✓' : ` — ${(100 - percentTotal).toFixed(0)}% left`}
                   </div>
                 )}
               </div>
