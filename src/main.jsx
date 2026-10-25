@@ -800,7 +800,7 @@ export default function App() {
             </div>
 
             <label style={S.label}>Split Type</label>
-            <div style={S.chipRow}>
+            <div style={S.chipGrid4}>
               {[
                 { key: 'self', label: '👤 Self' },
                 { key: 'equal', label: '⚖️ Equal' },
@@ -808,7 +808,7 @@ export default function App() {
                 { key: 'percentage', label: '% Percent' },
               ].map(s => (
                 <button key={s.key} onClick={() => setExpSplit(s.key)}
-                  style={{ ...S.chip, ...(expSplit === s.key ? S.chipActive : {}) }}>
+                  style={{ ...S.chipFit, ...(expSplit === s.key ? S.chipActive : {}) }}>
                   {s.label}
                 </button>
               ))}
@@ -888,16 +888,16 @@ export default function App() {
             )}
 
             <label style={S.label}>Category</label>
-            <div style={S.chipRow}>
-              {['Groceries','Rent/Bills','Dining','Fuel','Trip','Shopping','Other'].map(c => (
+            <div style={S.chipGrid4}>
+              {['Groceries','Rent/Bills','Dining','Fuel'].map(c => (
                 <button key={c} onClick={() => setExpCategory(c)}
-                  style={{ ...S.chip, ...(expCategory === c ? S.chipActive : {}) }}>{c}</button>
+                  style={{ ...S.chipFit, ...(expCategory === c ? S.chipActive : {}) }}>{c}</button>
               ))}
             </div>
 
             <label style={S.label}>Payment Method</label>
             <div style={S.chipRow}>
-              {['UPI','Cash','Credit','Debit'].map(p => (
+              {['UPI','Cash'].map(p => (
                 <button key={p} onClick={() => setExpPayment(p)}
                   style={{ ...S.chip, ...(expPayment === p ? S.chipActive : {}) }}>{p}</button>
               ))}
@@ -995,6 +995,8 @@ const S = {
   label:       { display: 'block', fontSize: 13, fontWeight: 600, color: '#555', marginBottom: 6, marginTop: 14 },
   input:       { width: '100%', padding: '11px 12px', borderRadius: 10, border: '1.5px solid #ddd', fontSize: 15, boxSizing: 'border-box', outline: 'none', marginBottom: 2, fontFamily: 'inherit' },
   chipRow:     { display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 4 },
+  chipGrid4:   { display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 6, marginBottom: 4 },
+  chipFit:     { padding: '9px 2px', borderRadius: 999, border: '1.5px solid #ddd', background: '#fff', fontSize: 12, fontWeight: 600, cursor: 'pointer', color: '#555', textAlign: 'center', whiteSpace: 'nowrap', minWidth: 0 },
   chip:        { padding: '7px 14px', borderRadius: 999, border: '1.5px solid #ddd', background: '#fff', fontSize: 13, fontWeight: 600, cursor: 'pointer', color: '#555' },
   chipActive:  { background: '#e8f5e9', borderColor: '#22533e', color: '#22533e' },
   primaryBtn:  { flex: 1, padding: 12, background: '#22533e', color: '#fff', border: 'none', borderRadius: 12, fontWeight: 700, fontSize: 15, cursor: 'pointer' },
