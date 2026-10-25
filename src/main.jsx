@@ -889,7 +889,7 @@ export default function App() {
 
             <label style={S.label}>Category</label>
             <div style={S.chipGrid4}>
-              {['Groceries','Rent/Bills','Dining','Fuel'].map(c => (
+              {['Groceries','Shopping','Dining','Fuel'].map(c => (
                 <button key={c} onClick={() => setExpCategory(c)}
                   style={{ ...S.chipFit, ...(expCategory === c ? S.chipActive : {}) }}>{c}</button>
               ))}
