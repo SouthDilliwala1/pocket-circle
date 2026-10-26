@@ -540,7 +540,7 @@ export default function App() {
       <button onClick={() => setShowFab(true)} style={S.fab}>+</button>
 
       {showFab && (
-        <div style={S.overlay} onClick={() => setShowFab(false)}>
+        <div style={{ ...S.overlay, alignItems: 'flex-end' }} onClick={() => setShowFab(false)}>
           <div style={{ ...S.sheet, padding: '24px 20px 36px' }} onClick={e => e.stopPropagation()}>
             <div style={{ fontWeight: 700, fontSize: 16, marginBottom: 16, color: '#333' }}>What would you like to do?</div>
             <button onClick={() => { setShowFab(false); setShowCreateModal(true); }} style={S.sheetBtn}>
@@ -772,7 +772,7 @@ export default function App() {
       {/* Add/Edit Expense Modal */}
       {showAddExpense && (
         <div style={S.overlay} onClick={() => setShowAddExpense(false)}>
-          <div style={{ ...S.modal, maxHeight: '92vh', overflowY: 'auto' }} onClick={e => e.stopPropagation()}>
+          <div style={{ ...S.modal, maxHeight: 'calc(100% - 32px)', overflowY: 'auto' }} onClick={e => e.stopPropagation()}>
             <div style={S.modalTitle}>{editingExpense ? 'Edit Expense' : 'Add Expense'}</div>
 
             <label style={S.label}>Description *</label>
@@ -987,9 +987,9 @@ const S = {
   miniBtn:     { fontSize: 12, padding: '3px 8px', border: '1px solid #ddd', borderRadius: 6, background: '#fff', cursor: 'pointer', color: '#555', fontWeight: 600 },
   addBtn:      { background: '#22533e', color: '#fff', border: 'none', borderRadius: 10, padding: '8px 16px', fontWeight: 700, fontSize: 14, cursor: 'pointer' },
   tag:         { background: '#e8f5e9', color: '#22533e', borderRadius: 6, padding: '2px 8px', fontSize: 11, fontWeight: 600 },
-  overlay:     { position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)', display: 'flex', alignItems: 'flex-end', justifyContent: 'center', zIndex: 100 },
+  overlay:     { position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100 },
   sheet:       { background: '#fff', borderRadius: '20px 20px 0 0', width: '100%', maxWidth: 480 },
-  modal:       { background: '#fff', borderRadius: 20, width: 'calc(100% - 32px)', maxWidth: 440, padding: '24px 20px', margin: '0 16px 40px', boxShadow: '0 8px 40px rgba(0,0,0,0.18)' },
+  modal:       { background: '#fff', borderRadius: 20, width: 'calc(100% - 32px)', maxWidth: 440, padding: '24px 20px', margin: 0, boxShadow: '0 8px 40px rgba(0,0,0,0.18)' },
   modalTitle:  { fontWeight: 800, fontSize: 18, color: '#1a1a1a', marginBottom: 16 },
   sheetBtn:    { display: 'flex', alignItems: 'center', gap: 14, width: '100%', padding: '14px 16px', background: '#f4f7f4', border: 'none', borderRadius: 14, cursor: 'pointer', marginBottom: 10, textAlign: 'left' },
   label:       { display: 'block', fontSize: 13, fontWeight: 600, color: '#555', marginBottom: 6, marginTop: 14 },
